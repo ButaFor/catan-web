@@ -25,12 +25,18 @@ git clone --quiet --depth 1 --single-branch --branch main "$repository" "$build_
   exit 1
 }
 
-if [[ ! -f $build_dir/repo/index.html ]]; then
-  echo 'main has no index.html yet; waiting for the first release'
+if [[ ! -f $build_dir/repo/apps/client/package.json ]]; then
+  echo 'main has no client yet; waiting for the first release'
   exit 0
 fi
+
+cd "$build_dir/repo"
+npm ci --no-audit --no-fund
+npm run build --workspace @catan/client
+test -f apps/client/dist/index.html
+
 mkdir "$build_dir/release"
-install -m 0644 "$build_dir/repo/index.html" "$build_dir/release/index.html"
+cp -a -- apps/client/dist/. "$build_dir/release/"
 
 if [[ ! -d $base/releases/$remote_commit ]]; then
   mv -- "$build_dir/release" "$base/releases/$remote_commit"
