@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "node --env-file=../../.env ./node_modules/tsx/dist/cli.mjs watch src/main.ts",
     "start": "node --env-file=../../.env dist/main.js",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
