@@ -89,10 +89,48 @@ npm run build
 npm test
 ```
 
-Сервер наразі надає технічний endpoint `GET /health`. Модулі авторизації,
-кімнат, realtime-взаємодії, доступу до БД та ігрових сесій розміщуються в
-`apps/server/src/`; їхня реалізація додаватиметься без зміни меж пакетів
-`game` і `shared`.
+Сервер надає технічний endpoint `GET /health` і перший вертикальний зріз
+авторизації:
+
+```text
+POST /auth/guest
+POST /auth/register
+POST /auth/login
+GET  /auth/me
+POST /auth/logout
+```
+
+Гостьова, password і Google OAuth авторизація використовують спільну серверну
+сесію в `HttpOnly` cookie. Password-користувачі реєструються через
+`POST /auth/register` з username і паролем, а входять через
+`POST /auth/login`. Паролі не зберігаються у відкритому вигляді: використовується
+Node.js `scrypt` із випадковою сіллю.
+
+Поки
+PostgreSQL ще не підключений, користувачі та сесії зберігаються у локальному
+JSON-файлі `apps/server/data/mock-db.json`. Файл створюється автоматично,
+ігнорується Git і призначений лише для локальної розробки та тестування.
+Шлях до нього можна змінити через `MOCK_DB_PATH`.
+
+Для Google OAuth потрібно створити OAuth 2.0 Web application у Google Cloud
+Console і додати redirect URI:
+
+```text
+http://127.0.0.1:3000/auth/google/callback
+```
+
+Потім потрібно заповнити `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` і
+`GOOGLE_REDIRECT_URI` у локальному `.env`. Авторизація запускається через
+`GET /auth/google`; після callback сервер створює або знаходить локального
+користувача та встановлює ту саму серверну session cookie, що й guest auth.
+Google access token не зберігається у mock database і не передається клієнту.
+Команда `npm run dev:server` завантажує змінні з кореневого `.env`; для
+production змінні краще передавати через systemd environment або окремий
+захищений env-файл.
+
+Модулі авторизації, кімнат, realtime-взаємодії, доступу до БД та ігрових сесій
+розміщуються в `apps/server/src/`; їхня реалізація додаватиметься без зміни
+меж пакетів `game` і `shared`.
 
 ## Авторські права
 
