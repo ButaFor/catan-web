@@ -1,0 +1,17 @@
+[Unit]
+Description=Deploy CATAN page from GitHub main
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=catan-deploy
+Group=catan-deploy
+WorkingDirectory=/srv/catan
+Environment=HOME=/srv/catan
+ExecStart=/usr/local/libexec/catan-deploy
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/catan
