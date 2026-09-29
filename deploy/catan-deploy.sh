@@ -34,6 +34,10 @@ cd "$build_dir/repo"
 npm ci --no-audit --no-fund
 npm run build --workspace @catan/client
 test -f apps/client/dist/index.html
+if ! grep -Fq '"/catan/assets/' apps/client/dist/index.html; then
+  echo 'Client assets are not based at /catan/; waiting for the matching release'
+  exit 0
+fi
 
 mkdir "$build_dir/release"
 cp -a -- apps/client/dist/. "$build_dir/release/"
