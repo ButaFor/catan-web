@@ -1,0 +1,10 @@
+[Unit]
+Description=Check GitHub for a new CATAN page every two minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/2:00
+Persistent=true
+Unit=catan-deploy.service
+
+[Install]
+WantedBy=timers.target
