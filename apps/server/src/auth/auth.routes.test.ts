@@ -10,6 +10,7 @@ process.env.GOOGLE_REDIRECT_URI =
   "http://127.0.0.1:3000/auth/google/callback";
 
 const { buildApp } = await import("../main.js");
+const { loadConfig } = await import("../config/env.js");
 
 const temporaryDirectories: string[] = [];
 
@@ -24,7 +25,7 @@ async function createTestApp() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "catan-auth-"));
   temporaryDirectories.push(directory);
   process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
-  const app = buildApp();
+  const app = buildApp(loadConfig());
   await app.ready();
   return app;
 }

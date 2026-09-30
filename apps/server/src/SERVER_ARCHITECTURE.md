@@ -115,6 +115,14 @@ Zod і створення типізованого `AppConfig`. `main.ts` вик
 composition root і передає модулям лише потрібні їм частини конфігурації,
 наприклад `AuthConfig`, `DatabaseConfig` або `ServerConfig`.
 
+Поточний loader підтримує `NODE_ENV`, `HOST`, `PORT`, `CORS_ORIGIN`,
+`DATABASE_URL`, `MOCK_DB_PATH`, Google OAuth credentials,
+`SESSION_TTL_SECONDS` і `OAUTH_STATE_TTL_SECONDS`. Google OAuth конфігурація
+має бути або повністю відсутня, або повністю задана. `DATABASE_URL` і
+`CORS_ORIGIN` поки лише валідовуються та передаються як підготовлений config
+surface; підключення database pool і CORS plugin належить відповідним
+майбутнім модулям.
+
 Feature- та infrastructure-модулі не повинні напряму читати `process.env` або
 залежати від глобального mutable config singleton. Явні залежності роблять
 межі модулів зрозумілими, не прив'язують їх до структури всього `AppConfig` і
