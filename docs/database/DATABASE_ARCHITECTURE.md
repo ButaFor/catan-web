@@ -1,10 +1,8 @@
-# Catan Web — проміжні рішення щодо бази даних та узгодження із сервером
+# Catan Web — архітектура бази даних і технічні рішення
 
-Статус: розгорнутий документ прийнятих концептуальних рішень і поточного узгодження між розробником БД та крудільщиком. Оновлено після `SERVER_DATABASE_ALIGNMENT.md` і коміту `975c1a7` гілки `yur25`.
+Статус: детальні концептуальні рішення з боку БД. Документ зберігає повні пояснення початкових рішень і уточнення після узгодження серверної архітектури. Це ще не фінальна фізична PostgreSQL-схема.
 
-Мета цього документа — зберегти детальне обґрунтування всіх прийнятих рішень щодо даних, зафіксувати вже виконане узгодження із серверною архітектурою та чітко назвати контракти, які треба погодити перед фізичним проєктуванням БД і реалізацією SQL-запитів.
-
-Документ поки **не є фінальною фізичною схемою БД**. Крудільщик уже оновив `apps/server/src/SERVER_ARCHITECTURE.md` на концептуальному рівні. Точні application contracts, event payloads і правила міграції форматів стану ще потрібно узгодити перед остаточною схемою, repository API, SQL-запитами, міграціями та індексами. Розділ 22 зберігає детальне пояснення вимог, які привели до оновлення серверної архітектури; розділ 27 фіксує нові рішення.
+Серверні application contracts і стан погодження з крудільщиком винесено до [SERVER_DATABASE_CONTRACTS.md](SERVER_DATABASE_CONTRACTS.md). Розділ 23 цього документа відповідає на попередній перелік із дев’яти питань про DB-модель.
 
 ---
 
@@ -710,225 +708,7 @@ games.final_state JSONB
 
 ---
 
-## 22. Вимоги, за якими узгоджено серверну архітектуру
-
-Нижче збережено повний перелік причин і вимог із початкового документа. Крудільщик відобразив основні пункти в `SERVER_ARCHITECTURE.md` комітом `975c1a7`. Цей коміт змінив документацію, а не реалізував PostgreSQL repositories чи application contracts. Поточні невирішені питання наведено в розділах 26–27.
-
-### 22.1. `game_events` більше не optional
-
-У попередній версії `SERVER_ARCHITECTURE.md` було зазначено, що `game_events` можна додати пізніше для replay/audit.
-
-Коміт `975c1a7` змінив цю тезу.
-
-`game_events` — базова частина persistence для Game вже в основній архітектурі.
-
-Причина: кожна ігрова дія має потрапляти в системний log, а системний log будується з structured events.
-
-Тобто server flow має бути ближчим до:
-
-```text
-command
- -> load game
- -> authorization
- -> call packages/game
- -> obtain new state + domain events[]
- -> transaction:
-      update game state
-      append game event(s)
- -> serialize public state/log events
- -> broadcast
-```
-
-### 22.2. Room має зв'язок `1:N` з Game
-
-У серверній архітектурі вже зафіксовано:
-
-```text
-ROOM 1:N GAME
-```
-
-Room не є одним Game.
-
-Room переживає завершення Game і підтримує rematch.
-
-### 22.3. Room не має статусу `finished`
-
-Замість:
-
-```text
-waiting / active / finished / closed
-```
-
-використовуємо:
-
-```text
-waiting / active / closed
-```
-
-Після завершення матчу:
-
-```text
-Game -> finished
-Room -> waiting
-```
-
-Причина: кімната не завершується разом із матчем.
-
-### 22.4. Потрібен `rules_snapshot` у Game
-
-Room зберігає налаштування для наступної гри.
-
-При старті Game вони копіюються в immutable snapshot конкретного Game.
-
-Причина: після rematch правила можуть змінитися, але стара гра повинна залишатися історично коректною.
-
-### 22.5. GameState — JSONB snapshot
-
-Крудільщик погодився на нашу модель.
-
-У серверній архітектурі вже закріплено:
-
-```text
-games.current_state JSONB
-```
-
-Це актуальний persistence snapshot GameState.
-
-Не робимо повний event sourcing.
-
-### 22.6. State і Event зберігаються однією транзакцією
-
-Game service не повинен викликати два незалежних repository writes без спільної транзакції.
-
-Узгоджений попередній DB/API механізм має вигляд:
-
-```text
-saveTransition(gameId, expectedVersion, newState, events[])
-```
-
-або транзакційний callback, який гарантує атомарність:
-
-```text
-new state + event(s)
-```
-
-Точні типи DTO, включно з форматами events, узгодимо разом. Жодна реалізація не повинна робити два незалежні writes без спільної транзакції.
-
-### 22.7. Guest залишається User
-
-Поточний auth підхід правильний:
-
-```text
-Guest -> User(isGuest=true) -> Session
-```
-
-Не потрібно робити окрему сутність guest у БД.
-
-Але downstream code повинен пам'ятати:
-
-- guest може грати;
-- guest може бути `game_player`;
-- guest не отримує account statistics/history.
-
-### 22.8. `game_sessions` краще перейменувати на `games` на persistence-рівні
-
-У server runtime може існувати `GameSession` як клас/об'єкт.
-
-У серверній архітектурі persistent таблицю вже названо:
-
-```text
-games
-```
-
-Причина: вже є `sessions` для auth, а `game_sessions` створює зайву термінологічну плутанину.
-
-### 22.9. Repository responsibilities треба залишити чіткими
-
-Application services не повинні містити SQL.
-
-PostgreSQL repositories не повинні містити game rules.
-
-`packages/game` не повинна знати про persistence.
-
-Цей пункт у поточній архітектурі вже правильний — його треба зберегти.
-
-### 22.10. Public serializer не повинен напряму використовувати DB rows
-
-Поточне правило крудільщика правильне і залишається:
-
-```text
-Database Row != Public DTO
-```
-
-Особливо важливо для GameState через hidden/private data.
-
-Server має формувати public projection окремо.
-
----
-
-## 23. Що крудільщику не потрібно зараз реалізовувати
-
-Поки не треба самостійно фіксувати:
-
-- остаточну фізичну схему `games`;
-- остаточну структуру `game_events.payload`;
-- індекси для event analytics;
-- фінальну схему match history;
-- статистику користувачів;
-- retention policy для guests;
-- persistence player chat;
-- SQL-запити для всієї game частини.
-
-Серверний architecture document уже синхронізовано на концептуальному рівні. Перед фізичним проєктуванням ще потрібно узгодити application contracts, перелічені в розділі 27.
-
----
-
-## 24. Попередній expected repository API
-
-Це не фінальний API, а напрямок для узгодження.
-
-### Auth
-
-```text
-UserRepository
-OAuthAccountRepository
-SessionRepository
-```
-
-### Rooms
-
-Потрібні операції приблизно такого рівня:
-
-```text
-createRoom
-findRoomById
-findRoomByCode
-addMember
-removeMember
-listMembers
-updateRoomStatus
-updateRoomRules
-```
-
-### Games
-
-Потрібні операції приблизно такого рівня:
-
-```text
-createGameFromRoom
-findGameById
-findOpenGameForRoom (або findActiveGameForRoom після уточнення семантики)
-loadCurrentState
-saveTransition(gameId, expectedVersion, newState, events[])
-finishGame
-listGamesForRoom
-```
-
-Точні method names та DTO узгодимо з крудільщиком. `createGameFromRoom` і `finishGame` мають керувати переходами Room + Game у транзакції, незалежно від того, як саме поділені repository interfaces.
-
----
-
-## 25. Підсумкова модель на цей момент
+## 22. Підсумкова модель на цей момент
 
 ```text
 USERS
@@ -972,34 +752,9 @@ game_events          = історія structured events
 
 ---
 
-## 26. Поточний стан узгодження та наступний етап
+## 23. Відповіді на попередні питання DB-моделі
 
-Коміт `975c1a7` у `yur25` зафіксував у серверній архітектурі `ROOM 1:N GAME`, три статуси Room, `rules_snapshot`, `games.current_state JSONB`, обов'язкові `game_events`, атомарний `saveTransition` і optimistic concurrency. Це узгодження **архітектурного документа**, а не підтвердження готових application contracts або PostgreSQL-коду.
-
-Перед фінальним фізичним дизайном DB side та крудільщик мають погодити точні контракти GameState і правил, каталог подій та payload, публічну проєкцію подій, transaction boundaries для start/finish/transition і обробку concurrency conflict. Деталі наведені в розділі 27.
-
-Після цього створюємо фінальний документ, де вже будуть:
-
-- остаточна логічна схема;
-- фізичні таблиці;
-- колонки і PostgreSQL types;
-- PK/FK/UNIQUE/CHECK constraints;
-- JSONB contracts;
-- indexes;
-- repository interfaces;
-- SQL-запити;
-- transaction boundaries;
-- migration order;
-- concurrency behavior;
-- history/statistics strategy.
-
-Цей фінальний документ і є фізичним проєктуванням. Реалізацію PostgreSQL persistence починаємо після його узгодження.
-
----
-
-## 27. Нові рішення після server/database alignment
-
-`SERVER_DATABASE_ALIGNMENT.md` поставив дев'ять питань перед SQL-схемою. Нижче зафіксовано прийняті відповіді та межі того, що ще невідомо. Вони уточнюють розділи вище, а не скасовують їхні пояснення.
+Попередній перелік питань перед SQL-схемою містив дев'ять пунктів. Нижче збережено прийняті відповіді та межі того, що ще невідомо. Поточний `SERVER_DATABASE_ALIGNMENT.md` містить інший перелік — вісім питань про server/database boundary; відповіді на них наведено в [документі контрактів](SERVER_DATABASE_CONTRACTS.md).
 
 | Питання | Поточне рішення |
 | --- | --- |
@@ -1013,12 +768,6 @@ game_events          = історія structured events
 | Одна відкрита Game в Room | Обмеження унікальності для `created`/`active` плюс серіалізація start/finish транзакцій Room. |
 | Cleanup | Expired/revoked sessions не проходять auth і можуть видалятися фоновим batch cleanup після завершення строку дії; точний розклад не впливає на correctness. У v1 guest users автоматично не видаляємо, щоб не зламати історичні `game_players`. |
 
-### Що ще потрібно погодити з крудільщиком
-
-1. Точну форму GameState, версію правил і шлях міграції старих JSONB snapshots. Невідомий формат не можна мовчки трактувати як поточний.
-2. Перелік game/system event types, payload, версіонування подій та правила public projection. Сирі payload можуть містити приватні дані; live broadcast і історичний перегляд мають перевіряти видимість для адресата.
-3. Контракти `createGameFromRoom`, `saveTransition` і `finishGame`: як сервер доповнює domain events, як фіксуються системні start/finish events, як обробляються events без зміни snapshot та конфлікт `expectedVersion`.
-4. У `SERVER_ARCHITECTURE.md` формулювання «feature-specific repository» наприкінці документа треба уточнити: repository **interface** може бути біля feature, PostgreSQL implementation і SQL — у `apps/server/src/db/`.
-5. Нормалізацію email у поточному auth application code. Зараз JSON repository шукає email точним порівнянням, тому без синхронізації DB uniqueness і OAuth lookup матимуть різну поведінку.
+Точні серверні контракти, обробка подій і стан їх погодження винесені до [SERVER_DATABASE_CONTRACTS.md](SERVER_DATABASE_CONTRACTS.md). На рівні БД залишається правило: repository interface може бути біля feature module, а PostgreSQL implementation і SQL — у `apps/server/src/db/`.
 
 Майбутню policy видалення історичних guest users, таблиці персональної статистики, індекси для event analytics, persistence player chat і окремий архівний формат фінального поля не фіксуємо в першій міграції. У v1 guest users залишаються, а sessions можна очищати асинхронно; незалежно від запуску cleanup, session expiration/revocation і цілісність історії Game є обов'язковими.
