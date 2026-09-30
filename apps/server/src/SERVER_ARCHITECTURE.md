@@ -248,6 +248,12 @@ rooms/
 Socket.IO room є transport-механізмом. Він не замінює database room і не є
 джерелом істини про учасників.
 
+Початок гри може ініціювати лише host після перевірки authorization,
+membership, capacity та ready state. Guest також може бути host, якщо має
+дійсний локальний `User` і `Session`. Після завершення гри membership кімнати
+зберігається, а ready state скидається для наступного матчу. Правила кімнати
+можна змінювати лише у стані `waiting`.
+
 ## `games/`
 
 ```text
@@ -273,12 +279,31 @@ games/
 Правила гри мають залишатися чистою операцією на кшталт:
 
 ```text
-state + command → new state або domain error
+state + command → new state + domain events[] або domain error
 ```
 
-Для однієї game session команди мають оброблятися послідовно. При переході
-на PostgreSQL використовується optimistic concurrency через `version` або
-еквівалентний узгоджений механізм.
+Перед викликом `packages/game` server перевіряє session, authorization і
+membership, а також визначає `actorPlayerId`. У game logic передається
+валідована команда з цим player ID, а не cookie, session, database row або
+transport context. Клієнт не може сам визначити actor. Системні команди
+формує лише server.
+
+Результат команди має одну з форм:
+
+```text
+applied   → новий state + одна або більше domain events
+unchanged → state без змін; лише для явно ідемпотентних команд
+rejected  → domain error; не є успішним transition
+```
+
+Некоректний хід не можна маскувати як `unchanged`. Для однієї game session
+команди мають оброблятися послідовно. При переході на PostgreSQL
+використовується optimistic concurrency через `version` або еквівалентний
+узгоджений механізм.
+
+`packages/game` не додає database IDs, sequence numbers або timestamps до
+domain events. Ці persistence metadata додаються на server/database boundary.
+`packages/game` також не відповідає за Socket.IO visibility.
 
 ### Persistence model
 
@@ -300,8 +325,17 @@ Lifecycle конкретної гри:
 created -> active -> finished
 ```
 
-У кімнаті може бути не більше однієї active game одночасно. Завершення гри
+У v1 `created` є коротким внутрішнім станом операції start: після успішного
+commit клієнт бачить Game одразу в `active`, Room — в `active`, а start event
+вже збережений. Довготривала `created` Game не є окремим клієнтським
+сценарієм.
+
+У кімнаті може бути не більше однієї відкритої Game (`created` або `active`)
+одночасно. Завершення гри
 повертає кімнату до `waiting`, а не переводить її у `finished`.
+Повторний start не створює другу Game і повертає контрольовану application
+error. Після finish membership зберігається, ready state скидається, а
+повторний finish не створює другий finish event.
 
 Room зберігає налаштування для наступного матчу. Під час створення Game вони
 копіюються в незмінний `rules_snapshot`, тому подальша зміна налаштувань
@@ -324,10 +358,10 @@ Snapshot не є історією всіх попередніх станів і 
 command
   -> packages/game
   -> new state + events[]
-  -> one database transaction:
+  -> one atomic persistence operation:
        update game snapshot
        append game events
-  -> public projection
+  -> public event/state projection
   -> broadcast
 ```
 
@@ -340,9 +374,59 @@ command
 saveTransition(gameId, expectedVersion, newState, events[])
 ```
 
+`saveTransition` приймає лише реальну зміну state і непорожній `events[]`.
 Оновлення дозволяється лише для очікуваної версії. Конфлікт версій повертається
 як контрольована application error і не вирішується тихим перезаписом новішого
-стану.
+стану або автоматичним повторним застосуванням команди.
+
+Події без зміни GameState використовують окремий application contract,
+наприклад `appendSystemEvents`. Така операція не є другим способом виконати
+gameplay transition і не повинна використовуватися для обходу перевірок
+`saveTransition`.
+
+### Domain, stored і public events
+
+Події проходять через окремі представлення:
+
+```text
+DomainEvent
+   ↓
+StoredGameEvent
+   ↓
+public projection для конкретного viewer
+   ↓
+Socket.IO / HTTP
+```
+
+`DomainEvent` описує факт, який виник у game logic або server application
+layer. `StoredGameEvent` додає persistence metadata. Public projection
+формується server serializer і може відрізнятися для різних гравців.
+
+Raw event payload не є public DTO. Приховані ресурси, development cards та
+інші private values не можна передавати всім клієнтам. Та сама projection
+policy використовується для live broadcast і history. Server-only events не
+публікуються клієнту.
+
+`GAME_STARTED` і `GAME_FINISHED` є server/application lifecycle events.
+Gameplay events створює `packages/game`; один event не повинен дублюватися
+одночасно game logic і server service.
+
+### Application errors
+
+Feature services працюють із типізованими application errors, а не з
+PostgreSQL-specific codes:
+
+```text
+NOT_FOUND
+INVALID_STATE_TRANSITION
+GAME_ALREADY_OPEN
+CONCURRENCY_CONFLICT
+UNSUPPORTED_PERSISTED_VERSION
+DATABASE_UNAVAILABLE
+```
+
+Routes і Socket.IO handlers маплять ці помилки у protocol responses.
+SQLSTATE, назви constraints та raw database errors не виходять за межі `db`.
 
 ## `db/` — Data Access Layer
 
@@ -367,13 +451,16 @@ db/
 
 - створити та закрити PostgreSQL pool;
 - виконувати SQL;
-- відкривати транзакції;
+- технічно реалізовувати транзакції, визначені application use case;
 - мапити database rows у application types;
 - повертати контрольовані repository errors;
 - не допускати SQL injection через параметризовані запити.
 
 Repository не повинен містити HTTP, Socket.IO або правила гри. Service не
-повинен містити SQL. Такий поділ дозволить замінити mock repository на
+повинен містити SQL або самостійно координувати PostgreSQL transaction
+details. Application service визначає межу use case та вимогу атомарності, а
+`db` надає відповідний transaction-aware repository contract і реалізує його.
+Такий поділ дозволить замінити mock repository на
 PostgreSQL repository без переписування auth/rooms/games services.
 
 Міграції зберігаються поза `src`:
