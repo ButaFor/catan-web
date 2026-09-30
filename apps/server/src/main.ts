@@ -1,37 +1,31 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { AuthRepository } from "./auth/auth.repository.js";
 import { registerAuthRoutes } from "./auth/auth.routes.js";
 import { AuthService } from "./auth/auth.service.js";
 import { GoogleOAuthService } from "./auth/oauth/google.service.js";
+import { loadConfig } from "./config/env.js";
+import type { AppConfig } from "./config/types.js";
 import {
   InvalidCredentialsError,
   OAuthConfigurationError,
   UsernameTakenError,
 } from "./auth/auth.errors.js";
 
-export function buildApp() {
+export function buildApp(config: AppConfig = loadConfig()) {
  const app = Fastify({ logger: true });
- const dataFile =
-   process.env.MOCK_DB_PATH ??
-   path.resolve(
-     path.dirname(fileURLToPath(import.meta.url)),
-     "../data/mock-db.json",
-   );
- const authRepository = new AuthRepository(dataFile);
- const authService = new AuthService(authRepository);
+ const authRepository = new AuthRepository(config.database.mockDbPath);
+ const authService = new AuthService(authRepository, config.auth);
  const googleOAuth = new GoogleOAuthService(
    authRepository,
    authService,
-   getGoogleConfig(),
+   config.googleOAuth,
  );
 
  app.register(cookie);
  app.get("/health", async () => ({ status: "ok" }));
  app.register(async (instance) =>
-   registerAuthRoutes(instance, authService, googleOAuth),
+   registerAuthRoutes(instance, authService, googleOAuth, config.auth),
  );
 
  app.setErrorHandler((error, request, reply) => {
@@ -83,18 +77,8 @@ export function buildApp() {
  return app;
 }
 
-function getGoogleConfig() {
- const clientId = process.env.GOOGLE_CLIENT_ID;
- const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
- const redirectUri = process.env.GOOGLE_REDIRECT_URI;
- return clientId && clientSecret && redirectUri
-   ? { clientId, clientSecret, redirectUri }
-   : undefined;
-}
-
-if (process.env.NODE_ENV !== "test") {
- const app = buildApp();
- const port = Number(process.env.PORT ?? 3000);
- const host = process.env.HOST ?? "127.0.0.1";
- await app.listen({ port, host });
+const config = loadConfig();
+if (config.server.nodeEnv !== "test") {
+ const app = buildApp(config);
+ await app.listen({ port: config.server.port, host: config.server.host });
 }

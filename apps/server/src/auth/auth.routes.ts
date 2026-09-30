@@ -14,29 +14,30 @@ import {
 } from "./auth.schemas.js";
 import { AuthService } from "./auth.service.js";
 import { GoogleOAuthService } from "./oauth/google.service.js";
-
-const cookieOptions = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-};
-
-const oauthCookieOptions = {
-  ...cookieOptions,
-  maxAge: 60 * 10,
-};
+import type { AuthConfig } from "../config/types.js";
 
 export async function registerAuthRoutes(
   app: FastifyInstance,
   authService: AuthService,
   googleOAuth: GoogleOAuthService,
+  config: AuthConfig,
 ): Promise<void> {
+  const cookieOptions = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: config.secureCookies,
+    path: "/",
+  };
+  const oauthCookieOptions = {
+    ...cookieOptions,
+    maxAge: config.oauthStateTtlSeconds,
+  };
+
   app.post("/auth/guest", async (request, reply) => {
     createGuestSchema.parse(request.body ?? {});
     const { user, token } = await authService.createGuest();
 
-    reply.setCookie(AuthService.sessionCookie, token, cookieOptions);
+    reply.setCookie(authService.sessionCookie, token, cookieOptions);
     return reply.code(201).send(userResponseSchema.parse(toUserResponse(user)));
   });
 
@@ -46,7 +47,7 @@ export async function registerAuthRoutes(
       input.username,
       input.password,
     );
-    reply.setCookie(AuthService.sessionCookie, token, cookieOptions);
+    reply.setCookie(authService.sessionCookie, token, cookieOptions);
     return reply.code(201).send(userResponseSchema.parse(toUserResponse(user)));
   });
 
@@ -56,7 +57,7 @@ export async function registerAuthRoutes(
       input.username,
       input.password,
     );
-    reply.setCookie(AuthService.sessionCookie, token, cookieOptions);
+    reply.setCookie(authService.sessionCookie, token, cookieOptions);
     return reply.send(userResponseSchema.parse(toUserResponse(user)));
   });
 
@@ -70,12 +71,12 @@ export async function registerAuthRoutes(
   });
 
   app.post("/auth/logout", async (request, reply) => {
-    const token = request.cookies[AuthService.sessionCookie];
+    const token = request.cookies[authService.sessionCookie];
     if (token) {
       await authService.revoke(token);
     }
 
-    reply.clearCookie(AuthService.sessionCookie, cookieOptions);
+    reply.clearCookie(authService.sessionCookie, cookieOptions);
     return reply.code(204).send();
   });
 
@@ -124,7 +125,7 @@ export async function registerAuthRoutes(
       verifier,
     );
     reply
-      .setCookie(AuthService.sessionCookie, token, cookieOptions)
+      .setCookie(authService.sessionCookie, token, cookieOptions)
       .clearCookie("google_oauth_state", cookieOptions)
       .clearCookie("google_oauth_verifier", cookieOptions);
     return reply.send(toUserResponse(user));
@@ -135,7 +136,7 @@ export async function authenticateRequest(
   request: FastifyRequest,
   authService: AuthService,
 ) {
-  const token = request.cookies[AuthService.sessionCookie];
+  const token = request.cookies[authService.sessionCookie];
   return token ? authService.authenticate(token) : undefined;
 }
 

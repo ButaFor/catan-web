@@ -140,7 +140,17 @@ http://127.0.0.1:3000/auth/google/callback
 Google access token не зберігається у mock database і не передається клієнту.
 Команда `npm run dev:server` завантажує змінні з кореневого `.env`; для
 production змінні краще передавати через systemd environment або окремий
-захищений env-файл.
+захищений env-файл. Node.js завантажує env-файл до запуску сервера, а
+`apps/server/src/config/env.ts` перевіряє значення через Zod і створює
+типізовану конфігурацію. Серверні модулі не читають `process.env` напряму.
+
+Основні параметри сервера мають defaults `HOST=127.0.0.1`, `PORT=3000`,
+session TTL 30 днів і OAuth state TTL 10 хвилин. Їх можна змінити через
+`SESSION_TTL_SECONDS` та `OAUTH_STATE_TTL_SECONDS`. Google OAuth або повністю
+вимкнений, або потребує одночасного заповнення `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` і `GOOGLE_REDIRECT_URI`; часткова конфігурація є
+помилкою запуску. `DATABASE_URL` і `CORS_ORIGIN` уже розпізнаються config
+loader-ом для майбутніх server-модулів, але ще не підключають DB або CORS.
 
 Модулі авторизації, кімнат, realtime-взаємодії, доступу до БД та ігрових сесій
 розміщуються в `apps/server/src/`; їхня реалізація додаватиметься без зміни

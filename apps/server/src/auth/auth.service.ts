@@ -11,13 +11,15 @@ import {
 } from "./auth.errors.js";
 import type { AuthRepository } from "./auth.repository.js";
 import type { AuthenticatedUser, Session, User } from "./auth.types.js";
+import type { AuthConfig } from "../config/types.js";
 
-const SESSION_COOKIE = "catan_session";
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const scrypt = promisify(scryptCallback);
 
 export class AuthService {
-  public constructor(private readonly repository: AuthRepository) {}
+  public constructor(
+    private readonly repository: AuthRepository,
+    private readonly config: AuthConfig,
+  ) {}
 
   public async createGuest(): Promise<{
     user: User;
@@ -38,7 +40,7 @@ export class AuthService {
       userId: user.id,
       tokenHash: hashToken(token),
       createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+      expiresAt: new Date(Date.now() + this.config.sessionTtlMs).toISOString(),
     });
 
     return { session, token };
@@ -93,7 +95,9 @@ export class AuthService {
     }
   }
 
-  public static readonly sessionCookie = SESSION_COOKIE;
+  public get sessionCookie(): string {
+    return this.config.sessionCookieName;
+  }
 }
 
 function createGuestName(): string {
