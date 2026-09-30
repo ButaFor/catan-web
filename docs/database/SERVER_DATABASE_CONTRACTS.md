@@ -1,6 +1,6 @@
 # Catan Web — контракти між сервером і базою даних
 
-Статус: спільні архітектурні домовленості та письмові відповіді з боку БД на поточний SERVER_DATABASE_ALIGNMENT.md. Коміт 975c1a7 у гілці yur25 підтверджує перелічені в розділі 1 концептуальні рішення. Нові application contracts у розділі 5 ще потребують підтвердження крудільщиком та реалізації в коді; документ не видає їх за вже реалізовані.
+Статус: application contracts погоджені — користувач підтвердив «Зі всім дійшли до згоди, розробляй все по готових рішеннях». Звірено з `origin/yur25` на коміті `e899892`. DB contracts і PostgreSQL repositories реалізовані в `apps/server/src/db/`; інтеграція в серверні application modules належить крудільщику. Нижче збережено попередні пояснення та уточнено конкретний API.
 
 Технічні рішення щодо зберігання, цілісності й транзакцій залишаються в [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md).
 
@@ -108,7 +108,7 @@ saveTransition(gameId, expectedVersion, newState, events[])
 new state + event(s)
 ```
 
-Точні типи DTO, включно з форматами events, узгодимо разом. Жодна реалізація не повинна робити два незалежні writes без спільної транзакції.
+Зовнішній envelope events і repository DTO реалізовані в `db/contracts/game.ts`; вкладені payload types та їхні Zod-схеми надає власник game/server. Жодна реалізація не повинна робити два незалежні writes без спільної транзакції.
 
 ### 1.7. Guest залишається User
 
@@ -175,7 +175,7 @@ Server має формувати public projection окремо.
 - persistence player chat;
 - SQL-запити для всієї game частини.
 
-Серверний architecture document уже синхронізовано на концептуальному рівні. Перед фізичним проєктуванням ще потрібно підтвердити application contracts із розділу 5.
+Application contracts із розділу 5 погоджені. Фізична схема й repositories реалізовані DB side та описані в розділах 24–29 `DATABASE_ARCHITECTURE.md`.
 
 ---
 
@@ -220,17 +220,17 @@ finishGame
 listGamesForRoom
 ```
 
-Точні method names та DTO узгодимо з крудільщиком. `createGameFromRoom` і `finishGame` мають керувати переходами Room + Game у транзакції, незалежно від того, як саме поділені repository interfaces.
+Це історичний попередній список; точні exports тепер у `db/contracts/`. `createGameFromRoom` і `finishGame` керують переходами Room + Game у транзакції. Замість загального `updateRoomStatus` є `closeRoom`, а active/waiting змінюються лише start/finish. Auth operations згруповані в `PgAuthRepository`, events — у `PgGameRepository` для гарантії атомарності.
 
 ---
 
 ## 4. Поточний стан узгодження та наступний етап
 
-Коміт `975c1a7` у `yur25` зафіксував у серверній архітектурі `ROOM 1:N GAME`, три статуси Room, `rules_snapshot`, `games.current_state JSONB`, обов'язкові `game_events`, атомарний `saveTransition` і optimistic concurrency. Це узгодження **архітектурного документа**, а не підтвердження готових application contracts або PostgreSQL-коду.
+Коміт `975c1a7` у `yur25` зафіксував у серверній архітектурі `ROOM 1:N GAME`, три статуси Room, `rules_snapshot`, `games.current_state JSONB`, обов'язкові `game_events`, атомарний `saveTransition` і optimistic concurrency. Стан гілки `e899892` також підтверджує applied/unchanged/rejected, server-defined actor, transient created, lifecycle events від server/application, окремий system event append та transaction-aware DB repositories.
 
-Перед фінальним фізичним дизайном DB side та крудільщик мають звірити application contracts із розділу 5 з реалізацією `rooms`, `games` і `packages/game`. Це письмові відповіді з боку БД, а не твердження, що крудільщик уже реалізував або окремо підтвердив кожен контракт.
+Користувач підтвердив завершення узгоджень. DB side реалізував контракти розділу 5, схему та repositories; серверна архітектура сама по собі не означає, що application modules уже підключили PostgreSQL.
 
-Після цього створюємо фінальний документ, де вже будуть:
+Фізичний дизайн додано до `DATABASE_ARCHITECTURE.md`, зі збереженням старих докладних рішень. Він містить:
 
 - остаточна логічна схема;
 - фізичні таблиці;
@@ -245,13 +245,13 @@ listGamesForRoom
 - concurrency behavior;
 - history/statistics strategy.
 
-Цей фінальний документ і є фізичним проєктуванням. Реалізацію PostgreSQL persistence починаємо після його узгодження.
+Цей дизайн реалізований у першій міграції та DB modules. Наступний крок на серверній стороні — підключити готові repositories, codecs і error mapping.
 
 ---
 
 ## 5. Відповіді на поточні питання server/database boundary
 
-Нижче — конкретний контракт, який DB side пропонує крудільщику для підтвердження. Приклади типів задають семантику межі модулів; вони ще не є готовими TypeScript exports. `packages/game/src/index.ts` і `packages/shared/src/index.ts` наразі порожні, тому точні вкладені типи Catan треба додати до реалізації `games`.
+Нижче — погоджені контракти. Виконувані TypeScript exports лежать у `apps/server/src/db/contracts/` і доступні через `db/index.ts`. Приклади нижче пояснюють семантику; повні вкладені Catan types належать `packages/game`, а public DTO — `packages/shared`. DB repositories generic за State/Rules і вимагають production runtime parsers через codec, без permissive defaults.
 
 ### 5.1. Результат ігрової команди
 
@@ -282,6 +282,8 @@ type GameCommandResult =
 
 `packages/game` не додає event id, sequence number чи timestamp. Сервер робить це на persistence boundary. Якщо правило потребує часу або випадковості, сервер надає контрольований вхід; клієнт не визначає результат кубиків, а чиста функція гри не читає БД чи Socket.IO.
 
+Уточнення за `yur25`: `packages/game` не керує Socket.IO visibility. `audience`/`recipientPlayerId` у наведеному envelope — внутрішні дані на game/server → DB boundary; server adapter відповідає за їх формування й перевірку, а serializer — за остаточну проєкцію для viewer. `GAME_STARTED` та `GAME_FINISHED` створює **server/application**, не `packages/game`; дублювати їх заборонено. Event ID/sequence/gameVersion/timestamp присвоює PostgreSQL repository.
+
 ### 5.2. GameState і rules snapshot
 
 `packages/game` є власником повного `GameState` та Zod-схем для його версій. Мінімальна валідована форма на межі модулів містить `phase`, `board`, `players`, `turn` (може бути NULL до першого ходу) і `bank`; точні вкладені типи та приховані поля визначаються правилами гри. Весь state має бути JSON-серіалізованим і повністю валідованим, а не `Record<string, unknown>` із перевіркою тільки верхнього рівня.
@@ -307,7 +309,7 @@ Start може ініціювати тільки host Room після автор
 
 ### 5.4. Application-facing repository interfaces
 
-Інтерфейси можуть лежати біля `rooms`, `games`, `auth`; PostgreSQL implementations і SQL залишаються в `apps/server/src/db/`. Services бачать внутрішні application types у camelCase, а не database rows. Для `find*` відсутність означає `undefined` (як у поточному `AuthRepository`), для `list*` — порожній масив. Mutation за відсутнього target повертає typed `NOT_FOUND` error, а не успіх із порожнім значенням.
+Реалізовані інтерфейси лежать у `apps/server/src/db/contracts/`; implementations і SQL — у `apps/server/src/db/`. Це дозволяє передати готовий DB API, не змінюючи серверні feature modules. Services бачать внутрішні application types у camelCase, а не database rows. Для `find*` відсутність означає `undefined` (як у поточному `AuthRepository`), для `list*` — порожній масив. Mutation за відсутнього target повертає typed `NOT_FOUND` error; винятки — явно ідемпотентні revoke відсутньої session та видалення відсутнього non-host membership в існуючій waiting Room.
 
 ```ts
 type StoredGame = {
@@ -324,6 +326,7 @@ type StoredGameEvent = {
   id: string;
   gameId: string;
   sequenceNumber: number;
+  gameVersion: number;
   type: string;
   actorPlayerId: string | null;
   payloadSchemaVersion: number;
@@ -334,9 +337,11 @@ type StoredGameEvent = {
 type SavedTransition = { game: StoredGame; events: StoredGameEvent[] };
 ```
 
-`createGameFromRoom` приймає перевірений стартовий склад, snapshot правил та початковий state і повертає Room, Game та фактично збережені start events. `findOpenGameForRoom` повертає `StoredGame | undefined`; `listGamesForRoom` повертає summaries без прихованого state. `loadCurrentState` повертає версійований state із concurrency version. `saveTransition` повертає `SavedTransition`. `finishGame` є окремою атомарною application operation з результатом `finished` або `alreadyFinished`, а не другим незалежним записом після `saveTransition`.
+`createGameFromRoom` приймає `{ id, roomId, hostUserId, expectedRoomVersion, initialState, players, events }` і повертає `{ room, game, events }`. Сервер резервує game/player UUID для посилань у state. Repository копіює snapshot правил із заблокованої Room; `expectedRoomVersion` гарантує, що правила/roster/ready не змінилися після побудови initialState. Передавати другу незалежну копію rules не потрібно. `findOpenGameForRoom` повертає `StoredGame | undefined`; `listGamesForRoom` повертає summaries без прихованого state. `loadCurrentState` повертає `{ schemaVersion, state, version } | undefined`. `saveTransition` повертає `SavedTransition`. `finishGame` є окремою атомарною application operation з результатом `finished` або `alreadyFinished`, а не другим незалежним записом після `saveTransition`.
 
-Для системної події без зміни snapshot (наприклад, disconnect) передбачаємо окрему `appendSystemEvents(gameId, expectedVersion, events[])`: вона записує події з новими sequence numbers і збільшує concurrency version на один, хоча `currentState` лишається тим самим. `saveTransition` приймає тільки зміну state з непорожнім `events[]`. Точні назви методів можуть змінитися, але ці success/error semantics мають зберегтися в mock і PostgreSQL implementations.
+Реальний `StoredGameEvent` додатково містить `audience` та умовний `recipientPlayerId`; для player recipient обов'язковий. `StoredGame` містить ISO `createdAt` і nullable `finishedAt`. Повні типи див. `db/contracts/game.ts`.
+
+Для системної події без зміни snapshot (наприклад, disconnect) реалізовано `appendSystemEvents(gameId, expectedVersion, events[])`: вона записує події з новими sequence numbers і збільшує concurrency version на один, хоча `currentState` лишається тим самим. Обов'язковий `parseSystemEvent` codec дозволяє лише погоджений allowlist system events, а start/finish types заборонені. `saveTransition` приймає тільки зміну state з непорожнім `events[]`. Ці success/error semantics мають зберігатися також у mock implementation сервера.
 
 ### 5.5. Результат `saveTransition`
 
@@ -379,6 +384,8 @@ Repository повертає typed application errors; SQLSTATE, назви const
 | `INVALID_STATE_TRANSITION`, `GAME_ALREADY_OPEN` | Статус Room/Game не дозволяє дію. | 409 |
 | `CONCURRENCY_CONFLICT` | Застаріла `expectedVersion`. | 409 |
 | `ACCOUNT_CONFLICT`, `USERNAME_TAKEN` | Відомий конфлікт унікальності auth. | 409 |
+| `ROOM_CODE_TAKEN`, `ROOM_FULL` | Код Room уже зайнятий / capacity вичерпано. | 409 |
+| `INVALID_PERSISTENCE_INPUT` | Порушено внутрішній DB input contract: schema, JSON, UUID, порожній event batch. | 500 для порушення server contract; зовнішні inputs валідовуються раніше |
 | `INVALID_GAME_COMMAND` | Команда валідна за формою, але порушує правило гри. | 422 |
 | `UNSUPPORTED_PERSISTED_VERSION`, `DATABASE_UNAVAILABLE` | Сервер не може безпечно прочитати state або БД недоступна. | 503 |
 | `INTERNAL_SERVER_ERROR` | Невідома constraint failure, зіпсовані дані або інша неочікувана помилка. | 500 |
@@ -387,6 +394,28 @@ Repository повертає typed application errors; SQLSTATE, назви const
 
 ## 6. Стан погодження
 
-- **Підтверджено в `yur25` (`975c1a7`):** межі модулів, Room 1:N Game, три статуси Room, rules snapshot, JSONB GameState, обов'язкові events, атомарний transition та optimistic concurrency на рівні архітектури.
-- **Відповідь DB side для перевірки крудільщиком:** усі пункти розділу 5, особливо типи результату `packages/game`, `created` у v1, event-only operation, public event DTO та error codes.
-- **Перед реалізацією:** крудільщик має підтвердити або скоригувати ці application contracts у своїй архітектурі та типах `rooms`/`games`/`packages/game`; DB side після цього проєктує фізичну схему й repositories. Це не вимагає вигадувати повні Catan types до реалізації правил.
+- **Погоджено:** користувач підтвердив усі рішення; звірено з серверною архітектурою `origin/yur25` на `e899892`, включно з уточненням про server lifecycle events.
+- **Реалізовано DB side:** SQL migration, pool, readiness, transactions, typed errors, Auth/Room/Game repositories, contracts і перевірки на PostgreSQL.
+- **Залишається server/game ownership:** wiring у composition root, application authorization, production Catan schemas/codecs, створення lifecycle events, public projection та transport error mapping. Це не DB implementation і не змінюється в цьому наборі файлів.
+
+## 7. Як серверу використати готові DB модулі
+
+Entry point: `apps/server/src/db/index.ts`. Доступні `createPool`, `checkDatabase`, `migrate`, `PgAuthRepository`, `PgRoomRepository`, `PgGameRepository`, `RepositoryError`, `normalizeEmail` та repository types. Конструктори не читають environment: отримують вузькі config/dependencies.
+
+```ts
+// Приклад складання залежностей для крудільщика; це не зміна main.ts.
+const pool = createPool({ connectionString: databaseConfig.connectionString });
+const authRepository = new PgAuthRepository(pool);
+const roomRepository = new PgRoomRepository(pool, gamePersistenceCodec);
+const gameRepository = new PgGameRepository(pool, gamePersistenceCodec);
+```
+
+`gamePersistenceCodec` має реалізувати `parseRules`, `parseState`, `parseEvent`, `parseSystemEvent`. Це адаптер перевірених Zod-схем game/server. Немає default codec, який приймає будь-який JSON. `parseEvent` включає server lifecycle events; `parseSystemEvent` — лише system allowlist. Невідома версія має кидати `RepositoryError` з `UNSUPPORTED_PERSISTED_VERSION`. DB додатково перевіряє JSON serialization та persisted versions перед записом.
+
+Auth methods структурно відповідають існуючим публічним методам JSON repository. Оскільки поточні services типізовані конкретним class із private fields, для dependency injection сервер має перейти на `AuthRepositoryPort` або свій структурний interface; самих однакових method names недостатньо для nominal class assignability. Новий `emailVerified` читається з БД; verified provider email перевіряється до `createOAuthUser`/link. Server OAuth flow спочатку шукає provider pair, після цього вирішує linking за погодженими правилами.
+
+Start/finish — **єдиний** repository call відповідного use case. Не викликати `saveTransition` перед `finishGame`. Caller додає рівно один lifecycle event, а repository перевіряє відсутність дубля. `alreadyFinished` повертає історичний фінальний Game та events його фінальної version, але актуальну Room: старий finish retry під час нового rematch не змінює нову Game чи ready state.
+
+Room version починається з 1, змінюється при lobby mutations; Game version — з 1, змінюється один раз на успішний transition/system append/finish. Sequence починається з 1 і спільний для всіх events однієї Game. `listEvents(gameId, afterSequence, limit)` — внутрішній keyset read для побудови history, не готовий public endpoint.
+
+Перед використанням target database застосовується `migrate`; під час shutdown викликається `pool.end()`. `checkDatabase` — DB readiness primitive; підключення його до health route належить серверу. Технічний error cause доступний тільки для внутрішніх logs, публічний response формується явним mapper. Повні команди міграцій/перевірок і фізична схема — `DATABASE_ARCHITECTURE.md`, розділи 24–29.
