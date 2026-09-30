@@ -212,7 +212,7 @@ rooms/
 - список учасників;
 - capacity;
 - ready state;
-- статус `waiting`, `active`, `finished` або `closed`;
+- статус `waiting`, `active` або `closed`;
 - запуск game session.
 
 Socket.IO room є transport-механізмом. Він не замінює database room і не є
@@ -247,8 +247,72 @@ state + command → new state або domain error
 ```
 
 Для однієї game session команди мають оброблятися послідовно. При переході
-на PostgreSQL це може бути транзакція з перевіркою `version` або інший
-узгоджений concurrency mechanism.
+на PostgreSQL використовується optimistic concurrency через `version` або
+еквівалентний узгоджений механізм.
+
+### Persistence model
+
+Кімната та конкретний матч є різними сутностями:
+
+```text
+ROOM 1:N GAME
+```
+
+Кімната може пережити завершення матчу та прийняти rematch. Її lifecycle:
+
+```text
+waiting -> active -> waiting -> active -> ... -> closed
+```
+
+Lifecycle конкретної гри:
+
+```text
+created -> active -> finished
+```
+
+У кімнаті може бути не більше однієї active game одночасно. Завершення гри
+повертає кімнату до `waiting`, а не переводить її у `finished`.
+
+Room зберігає налаштування для наступного матчу. Під час створення Game вони
+копіюються в незмінний `rules_snapshot`, тому подальша зміна налаштувань
+кімнати не змінює історичну конфігурацію вже створеної гри.
+
+Поточний стан гри зберігається як актуальний snapshot:
+
+```text
+games.current_state JSONB
+```
+
+Snapshot не є історією всіх попередніх станів і має бути версійований на
+рівні формату, щоб зміни GameState оброблялися явно.
+
+Кожен результативний transition створює один або кілька структурованих
+`game_events`. Events є обов'язковою частиною gameplay persistence для
+системного log, debugging, audit і можливого replay.
+
+```text
+command
+  -> packages/game
+  -> new state + events[]
+  -> one database transaction:
+       update game snapshot
+       append game events
+  -> public projection
+  -> broadcast
+```
+
+Це не повний event sourcing: після restart сервер завантажує `current_state`,
+а не відтворює всю історію events.
+
+Збереження state і events має бути атомарним на application/database boundary:
+
+```text
+saveTransition(gameId, expectedVersion, newState, events[])
+```
+
+Оновлення дозволяється лише для очікуваної версії. Конфлікт версій повертається
+як контрольована application error і не вирішується тихим перезаписом новішого
+стану.
 
 ## `db/` — Data Access Layer
 
@@ -370,11 +434,13 @@ sessions
 ```text
 rooms
 room_members
-game_sessions
+games
+game_players
+game_events
 ```
 
-`game_events` можна додати пізніше для replay та audit; повний event sourcing
-не є вимогою першої версії.
+`game_events` є частиною базової persistence-моделі gameplay. Повний event
+sourcing не використовується.
 
 Рекомендовані середовища:
 
