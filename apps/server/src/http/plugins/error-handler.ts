@@ -8,6 +8,17 @@ import { RepositoryError } from "../../db/repository.errors.js";
 
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, request, reply) => {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 429
+    ) {
+      return reply.code(429).send({
+        code: "RATE_LIMITED",
+        message: "Too many requests",
+      });
+    }
     const errorObject = error instanceof Error ? error : undefined;
     const errorName = errorObject?.name;
 

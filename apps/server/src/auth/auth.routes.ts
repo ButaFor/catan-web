@@ -1,8 +1,4 @@
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   AuthenticationError,
@@ -19,7 +15,6 @@ import {
 import { AuthService } from "./auth.service.js";
 import { GoogleOAuthService } from "./oauth/google.service.js";
 import type { AuthConfig } from "../config/types.js";
-import { AuthRateLimiter } from "./auth.rate-limit.js";
 
 export async function registerAuthRoutes(
   app: FastifyInstance,
@@ -27,10 +22,6 @@ export async function registerAuthRoutes(
   googleOAuth: GoogleOAuthService,
   config: AuthConfig,
 ): Promise<void> {
-  const rateLimiter = new AuthRateLimiter(
-    config.rateLimitMax,
-    config.rateLimitWindowSeconds * 1000,
-  );
   const cookieOptions = {
     httpOnly: true,
     sameSite: "lax" as const,
@@ -44,7 +35,6 @@ export async function registerAuthRoutes(
 
   app.post(
     "/auth/guest",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
       createGuestSchema.parse(request.body ?? {});
       const { user, token } = await authService.createGuest();
@@ -58,7 +48,6 @@ export async function registerAuthRoutes(
 
   app.post(
     "/auth/register",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
       const input = registerSchema.parse(request.body);
       const { user, token } = await authService.register(
@@ -74,7 +63,6 @@ export async function registerAuthRoutes(
 
   app.post(
     "/auth/login",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
       const input = loginSchema.parse(request.body);
       const { user, token } = await authService.login(
@@ -88,7 +76,6 @@ export async function registerAuthRoutes(
 
   app.get(
     "/auth/me",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await authenticateRequest(request, authService);
     if (!authenticated) {
@@ -101,7 +88,6 @@ export async function registerAuthRoutes(
 
   app.post(
     "/auth/logout",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const token = request.cookies[authService.sessionCookie];
     if (token) {
@@ -115,7 +101,6 @@ export async function registerAuthRoutes(
 
   app.get(
     "/auth/google",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (_request, reply) => {
       const authorization = googleOAuth.createAuthorization();
       reply
@@ -135,7 +120,6 @@ export async function registerAuthRoutes(
 
   app.get(
     "/auth/google/callback",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
       const query = googleCallbackSchema.parse(request.query);
       if (query.error) {
@@ -177,22 +161,6 @@ export async function registerAuthRoutes(
   });
 }
 
-function rateLimitRequest(rateLimiter: AuthRateLimiter) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
-    const result = rateLimiter.consume(
-      `${request.ip}:${request.routeOptions.url}`,
-    );
-    reply.header("X-RateLimit-Limit", rateLimiter.limit);
-    reply.header("X-RateLimit-Remaining", result.remaining);
-    if (!result.allowed) {
-      reply.header("Retry-After", result.retryAfterSeconds);
-      return reply.code(429).send({
-        code: "RATE_LIMITED",
-        message: "Too many requests",
-      });
-    }
-  };
-}
 
 export async function authenticateRequest(
   request: FastifyRequest,

@@ -1,11 +1,9 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticateRequest } from "../auth/auth.routes.js";
 import { AuthenticationError } from "../auth/auth.errors.js";
 import { AuthService } from "../auth/auth.service.js";
 import { RoomService } from "./room.service.js";
-import { AuthRateLimiter } from "../auth/auth.rate-limit.js";
-import type { AuthConfig } from "../config/types.js";
 
 const roomIdParams = z.object({ roomId: z.string().uuid() });
 const createRoomBody = z.object({
@@ -24,15 +22,9 @@ export async function registerRoomRoutes(
   app: FastifyInstance,
   roomService: RoomService,
   authService: AuthService,
-  config: AuthConfig,
 ): Promise<void> {
-  const rateLimiter = new AuthRateLimiter(
-    config.rateLimitMax,
-    config.rateLimitWindowSeconds * 1000,
-  );
   app.post(
     "/rooms",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const input = createRoomBody.parse(request.body);
@@ -47,7 +39,6 @@ export async function registerRoomRoutes(
 
   app.get(
     "/rooms/:roomId",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -58,7 +49,6 @@ export async function registerRoomRoutes(
 
   app.post(
     "/rooms/:roomId/join",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -69,7 +59,6 @@ export async function registerRoomRoutes(
 
   app.post(
     "/rooms/:roomId/leave",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -80,7 +69,6 @@ export async function registerRoomRoutes(
 
   app.post(
     "/rooms/:roomId/ready",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -96,7 +84,6 @@ export async function registerRoomRoutes(
 
   app.put(
     "/rooms/:roomId/rules",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -113,7 +100,6 @@ export async function registerRoomRoutes(
 
   app.post(
     "/rooms/:roomId/host",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -129,7 +115,6 @@ export async function registerRoomRoutes(
 
   app.post(
     "/rooms/:roomId/close",
-    { preHandler: rateLimitRequest(rateLimiter) },
     async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
@@ -139,22 +124,6 @@ export async function registerRoomRoutes(
   );
 }
 
-function rateLimitRequest(rateLimiter: AuthRateLimiter) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
-    const result = rateLimiter.consume(
-      `${request.ip}:${request.routeOptions.url}`,
-    );
-    reply.header("X-RateLimit-Limit", rateLimiter.limit);
-    reply.header("X-RateLimit-Remaining", result.remaining);
-    if (!result.allowed) {
-      reply.header("Retry-After", result.retryAfterSeconds);
-      return reply.code(429).send({
-        code: "RATE_LIMITED",
-        message: "Too many requests",
-      });
-    }
-  };
-}
 
 async function requireAuthentication(
   request: FastifyRequest,

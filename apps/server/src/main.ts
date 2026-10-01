@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import type { Pool } from "pg";
 import {
   createPool,
@@ -41,13 +42,23 @@ export function buildApp(config: AppConfig = loadConfig()) {
  );
 
  app.register(cookie);
+ app.register(rateLimit, {
+   global: true,
+   max: config.auth.rateLimitMax,
+   timeWindow: config.auth.rateLimitWindowSeconds * 1000,
+   errorResponseBuilder: () => ({
+     statusCode: 429,
+     code: "RATE_LIMITED",
+     message: "Too many requests",
+   }),
+ });
  registerCors(app, config.server);
- registerHealthRoutes(app, config.auth);
+ registerHealthRoutes(app);
  app.register(async (instance) =>
    registerAuthRoutes(instance, authService, googleOAuth, config.auth),
  );
  app.register(async (instance) =>
-   registerRoomRoutes(instance, roomService, authService, config.auth),
+   registerRoomRoutes(instance, roomService, authService),
  );
  registerErrorHandler(app);
  if (pool) {

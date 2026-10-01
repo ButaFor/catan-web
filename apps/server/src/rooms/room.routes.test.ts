@@ -158,7 +158,7 @@ describe("rooms HTTP integration", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "catan-room-"));
     temporaryDirectories.push(directory);
     process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
-    process.env.AUTH_RATE_LIMIT_MAX = "1";
+    process.env.AUTH_RATE_LIMIT_MAX = "2";
     const app = buildApp(loadConfig());
     await app.ready();
 
