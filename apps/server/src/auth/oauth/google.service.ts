@@ -4,7 +4,10 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { OAuthConfigurationError } from "../auth.errors.js";
-import type { AuthRepository } from "../auth.repository.js";
+import {
+  normalizeEmail,
+  type AuthRepositoryPort,
+} from "../../db/contracts/auth.js";
 import type { AuthService } from "../auth.service.js";
 import type { User } from "../auth.types.js";
 
@@ -28,7 +31,7 @@ export type GoogleAuthorization = {
 
 export class GoogleOAuthService {
   public constructor(
-    private readonly repository: AuthRepository,
+    private readonly repository: AuthRepositoryPort,
     private readonly authService: AuthService,
     private readonly config?: GoogleConfig,
   ) {}
@@ -104,14 +107,16 @@ export class GoogleOAuthService {
     );
     let user = existingAccount?.user;
     if (!user) {
-      user = await this.repository.findUserByEmail(profile.email);
+      user = await this.repository.findUserByEmail(
+        normalizeEmail(profile.email),
+      );
       if (user) {
         await this.repository.linkOAuthAccount(user.id, "google", profile.sub);
       }
     }
     user ??= await this.repository.createOAuthUser({
       displayName: profile.name ?? profile.email.split("@")[0] ?? "Google user",
-      email: profile.email,
+      email: normalizeEmail(profile.email),
       ...(profile.picture ? { avatarUrl: profile.picture } : {}),
       providerAccountId: profile.sub,
     });

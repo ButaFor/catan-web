@@ -9,7 +9,7 @@ import {
   InvalidCredentialsError,
   UsernameTakenError,
 } from "./auth.errors.js";
-import type { AuthRepository } from "./auth.repository.js";
+import type { AuthRepositoryPort } from "../db/contracts/auth.js";
 import type { AuthenticatedUser, Session, User } from "./auth.types.js";
 import type { AuthConfig } from "../config/types.js";
 
@@ -17,7 +17,7 @@ const scrypt = promisify(scryptCallback);
 
 export class AuthService {
   public constructor(
-    private readonly repository: AuthRepository,
+    private readonly repository: AuthRepositoryPort,
     private readonly config: AuthConfig,
   ) {}
 

@@ -21,10 +21,15 @@ afterEach(async () => {
   }
 });
 
-async function createTestApp() {
+async function createTestApp(rateLimitMax?: number) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "catan-auth-"));
   temporaryDirectories.push(directory);
   process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
+  if (rateLimitMax !== undefined) {
+    process.env.AUTH_RATE_LIMIT_MAX = String(rateLimitMax);
+  } else {
+    delete process.env.AUTH_RATE_LIMIT_MAX;
+  }
   const app = buildApp(loadConfig());
   await app.ready();
   return app;
@@ -40,6 +45,30 @@ function cookieHeader(setCookie: string | string[] | undefined): string {
 }
 
 describe("auth HTTP integration", () => {
+  it("rejects auth requests after the configured rate limit", async () => {
+    const app = await createTestApp(1);
+    const first = await app.inject({
+      method: "POST",
+      url: "/auth/guest",
+      payload: {},
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/auth/guest",
+      payload: {},
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(429);
+    expect(second.json()).toEqual({
+      code: "RATE_LIMITED",
+      message: "Too many requests",
+    });
+    expect(second.headers["retry-after"]).toBeDefined();
+    expect(second.headers["x-ratelimit-limit"]).toBe("1");
+    await app.close();
+  });
+
   it("registers, authenticates, logs in, and logs out a password user", async () => {
     const app = await createTestApp();
     const registration = await app.inject({
@@ -97,7 +126,7 @@ describe("auth HTTP integration", () => {
     const app = await createTestApp();
     const googleProfile = {
       sub: "google-user-1",
-      email: "alice@example.com",
+      email: " Alice@Example.COM ",
       email_verified: true,
       name: "Alice",
       picture: "https://example.com/alice.png",
