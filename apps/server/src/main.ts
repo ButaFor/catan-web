@@ -47,7 +47,7 @@ export function buildApp(config: AppConfig = loadConfig()) {
    registerAuthRoutes(instance, authService, googleOAuth, config.auth),
  );
  app.register(async (instance) =>
-   registerRoomRoutes(instance, roomService, authService),
+   registerRoomRoutes(instance, roomService, authService, config.auth),
  );
  registerErrorHandler(app);
  if (pool) {
@@ -55,7 +55,7 @@ export function buildApp(config: AppConfig = loadConfig()) {
      await pool.end();
    });
  }
- createRealtimeServer(app.server, authService, roomService);
+ createRealtimeServer(app.server, authService, roomService, config.auth);
 
  return app;
 }

@@ -123,12 +123,13 @@ composition root і передає модулям лише потрібні їм
 surface; підключення database pool і CORS plugin належить відповідним
 майбутнім модулям.
 
-Auth endpoints обмежуються локальним fixed-window rate limiter за IP і
-маршрутом. Ліміт та вікно задаються `AUTH_RATE_LIMIT_MAX` і
+Auth і authenticated room endpoints, Socket.IO handshake та room events
+обмежуються локальним fixed-window rate limiter за IP, маршрутом, user ID або
+event name. Ліміт та вікно задаються `AUTH_RATE_LIMIT_MAX` і
 `AUTH_RATE_LIMIT_WINDOW_SECONDS`; перевищення повертає `429 RATE_LIMITED`.
 Поточне in-memory сховище достатнє для одного процесу та не є distributed
 захистом. Перед горизонтальним масштабуванням storage потрібно замінити на
-спільне сховище, не змінюючи route-level contract.
+спільне atomic сховище, не змінюючи route-level contract.
 
 Feature- та infrastructure-модулі не повинні напряму читати `process.env` або
 залежати від глобального mutable config singleton. Явні залежності роблять

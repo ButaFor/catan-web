@@ -86,16 +86,23 @@ export async function registerAuthRoutes(
     },
   );
 
-  app.get("/auth/me", async (request, reply) => {
+  app.get(
+    "/auth/me",
+    { preHandler: rateLimitRequest(rateLimiter) },
+    async (request, reply) => {
     const authenticated = await authenticateRequest(request, authService);
     if (!authenticated) {
       throw new AuthenticationError();
     }
 
     return userResponseSchema.parse(toUserResponse(authenticated.user));
-  });
+    },
+  );
 
-  app.post("/auth/logout", async (request, reply) => {
+  app.post(
+    "/auth/logout",
+    { preHandler: rateLimitRequest(rateLimiter) },
+    async (request, reply) => {
     const token = request.cookies[authService.sessionCookie];
     if (token) {
       await authService.revoke(token);
@@ -103,7 +110,8 @@ export async function registerAuthRoutes(
 
     reply.clearCookie(authService.sessionCookie, cookieOptions);
     return reply.code(204).send();
-  });
+    },
+  );
 
   app.get(
     "/auth/google",

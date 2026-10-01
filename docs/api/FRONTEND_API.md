@@ -321,9 +321,16 @@ Realtime events для rules update, host transfer, close та games будут�
 
 ## 6. Rate limiting
 
-Auth endpoints мають in-memory fixed-window rate limit. При перевищенні server
-повертає `429` та headers `Retry-After`, `X-RateLimit-Limit`,
-`X-RateLimit-Remaining`. Не робіть безперервні автоматичні retries.
+Auth endpoints, authenticated room HTTP endpoints, Socket.IO handshakes і room
+events мають in-memory fixed-window rate limit. HTTP при перевищенні повертає
+`429` та headers `Retry-After`, `X-RateLimit-Limit`,
+`X-RateLimit-Remaining`. Socket.IO acknowledgement має `code: "RATE_LIMITED"`
+і `retryAfterSeconds`.
+
+Поточний ліміт налаштовується через `AUTH_RATE_LIMIT_MAX` і
+`AUTH_RATE_LIMIT_WINDOW_SECONDS`. Не робіть безперервні автоматичні retries.
+Лімітер process-local; для горизонтального production deployment потрібне
+shared atomic storage.
 
 ## 7. Reconnection and stale state
 

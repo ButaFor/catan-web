@@ -153,4 +153,39 @@ describe("rooms HTTP integration", () => {
     expect(details.json().status).toBe("closed");
     await first.app.close();
   });
+
+  it("rate-limits authenticated room requests", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "catan-room-"));
+    temporaryDirectories.push(directory);
+    process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
+    process.env.AUTH_RATE_LIMIT_MAX = "1";
+    const app = buildApp(loadConfig());
+    await app.ready();
+
+    const guest = await app.inject({
+      method: "POST",
+      url: "/auth/guest",
+      payload: {},
+    });
+    const cookie = cookieHeader(guest.headers["set-cookie"]);
+    const first = await app.inject({
+      method: "POST",
+      url: "/rooms",
+      headers: { cookie },
+      payload: { name: "Limited room", capacity: 3 },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/rooms",
+      headers: { cookie },
+      payload: { name: "Blocked room", capacity: 3 },
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(429);
+    expect(second.json()).toMatchObject({ code: "RATE_LIMITED" });
+    expect(second.headers["retry-after"]).toBeDefined();
+    await app.close();
+    delete process.env.AUTH_RATE_LIMIT_MAX;
+  });
 });

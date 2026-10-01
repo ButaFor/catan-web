@@ -177,11 +177,13 @@ session TTL 30 днів і OAuth state TTL 10 хвилин. Їх можна зм
 `GOOGLE_CLIENT_SECRET` і `GOOGLE_REDIRECT_URI`; часткова конфігурація є
 помилкою запуску. `DATABASE_URL` і `CORS_ORIGIN` уже розпізнаються config
 loader-ом для майбутніх server-модулів, але ще не підключають DB або CORS.
-Auth endpoints також мають локальний fixed-window rate limit на IP та маршрут:
+Auth і authenticated room endpoints, Socket.IO handshake та room events також
+мають локальний fixed-window rate limit на IP, маршрут, user ID або event name:
 за замовчуванням 10 запитів за 60 секунд. Значення налаштовуються через
 `AUTH_RATE_LIMIT_MAX` і `AUTH_RATE_LIMIT_WINDOW_SECONDS`; перевищення повертає
-HTTP 429. Поточний limiter зберігає стан у пам'яті процесу, тому для кількох
-інстансів у майбутньому потрібне спільне сховище.
+HTTP 429 або Socket.IO `RATE_LIMITED`. Поточний limiter зберігає стан у пам'яті
+процесу, тому для кількох інстансів у майбутньому потрібне спільне atomic
+сховище.
 
 Модулі авторизації, кімнат, realtime-взаємодії, доступу до БД та ігрових сесій
 розміщуються в `apps/server/src/`; їхня реалізація додаватиметься без зміни

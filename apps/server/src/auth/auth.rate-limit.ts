@@ -9,7 +9,7 @@ export type RateLimitResult = {
   retryAfterSeconds: number;
 };
 
-export class AuthRateLimiter {
+export class FixedWindowRateLimiter {
   private readonly windows = new Map<string, Window>();
 
   public constructor(
@@ -18,10 +18,10 @@ export class AuthRateLimiter {
     private readonly now: () => number = Date.now,
   ) {
     if (!Number.isInteger(maxRequests) || maxRequests < 1) {
-      throw new Error("Auth rate limit max must be a positive integer");
+      throw new Error("Rate limit max must be a positive integer");
     }
     if (!Number.isInteger(windowMs) || windowMs < 1) {
-      throw new Error("Auth rate limit window must be a positive integer");
+      throw new Error("Rate limit window must be a positive integer");
     }
   }
 
@@ -76,3 +76,5 @@ export class AuthRateLimiter {
     }
   }
 }
+
+export class AuthRateLimiter extends FixedWindowRateLimiter {}

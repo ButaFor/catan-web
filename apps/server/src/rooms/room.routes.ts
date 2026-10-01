@@ -1,9 +1,11 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authenticateRequest } from "../auth/auth.routes.js";
 import { AuthenticationError } from "../auth/auth.errors.js";
 import { AuthService } from "../auth/auth.service.js";
 import { RoomService } from "./room.service.js";
+import { AuthRateLimiter } from "../auth/auth.rate-limit.js";
+import type { AuthConfig } from "../config/types.js";
 
 const roomIdParams = z.object({ roomId: z.string().uuid() });
 const createRoomBody = z.object({
@@ -22,8 +24,30 @@ export async function registerRoomRoutes(
   app: FastifyInstance,
   roomService: RoomService,
   authService: AuthService,
+  config: AuthConfig,
 ): Promise<void> {
-  app.post("/rooms", async (request, reply) => {
+  const rateLimiter = new AuthRateLimiter(
+    config.rateLimitMax,
+    config.rateLimitWindowSeconds * 1000,
+  );
+  const rateLimit = {
+    preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+      const result = rateLimiter.consume(
+        `${request.ip}:${request.routeOptions.url}`,
+      );
+      reply.header("X-RateLimit-Limit", rateLimiter.limit);
+      reply.header("X-RateLimit-Remaining", result.remaining);
+      if (!result.allowed) {
+        reply.header("Retry-After", result.retryAfterSeconds);
+        return reply.code(429).send({
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+        });
+      }
+    },
+  };
+
+  app.post("/rooms", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const input = createRoomBody.parse(request.body);
     const details = await roomService.create(
@@ -34,28 +58,28 @@ export async function registerRoomRoutes(
     return reply.code(201).send(toRoomResponse(details));
   });
 
-  app.get("/rooms/:roomId", async (request, reply) => {
+  app.get("/rooms/:roomId", rateLimit, async (request, reply) => {
     await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     const details = await roomService.details(roomId);
     return reply.send(toRoomResponse(details));
   });
 
-  app.post("/rooms/:roomId/join", async (request, reply) => {
+  app.post("/rooms/:roomId/join", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     const details = await roomService.join(authenticated, roomId);
     return reply.send(toRoomResponse(details));
   });
 
-  app.post("/rooms/:roomId/leave", async (request, reply) => {
+  app.post("/rooms/:roomId/leave", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     await roomService.leave(authenticated, roomId);
     return reply.code(204).send();
   });
 
-  app.post("/rooms/:roomId/ready", async (request, reply) => {
+  app.post("/rooms/:roomId/ready", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     const { ready } = readyBody.parse(request.body);
@@ -67,7 +91,7 @@ export async function registerRoomRoutes(
     return reply.send(toRoomResponse(details));
   });
 
-  app.put("/rooms/:roomId/rules", async (request, reply) => {
+  app.put("/rooms/:roomId/rules", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     const input = updateRulesBody.parse(request.body);
@@ -80,7 +104,7 @@ export async function registerRoomRoutes(
     return reply.send(toRoomResponse(details));
   });
 
-  app.post("/rooms/:roomId/host", async (request, reply) => {
+  app.post("/rooms/:roomId/host", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     const { nextHostUserId } = transferHostBody.parse(request.body);
@@ -92,7 +116,7 @@ export async function registerRoomRoutes(
     return reply.send(toRoomResponse(details));
   });
 
-  app.post("/rooms/:roomId/close", async (request, reply) => {
+  app.post("/rooms/:roomId/close", rateLimit, async (request, reply) => {
     const authenticated = await requireAuthentication(request, authService);
     const { roomId } = roomIdParams.parse(request.params);
     await roomService.close(authenticated, roomId);

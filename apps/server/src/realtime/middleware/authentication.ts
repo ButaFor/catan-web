@@ -1,6 +1,7 @@
 import type { Socket } from "socket.io";
 import type { AuthenticatedUser } from "../../auth/auth.types.js";
 import type { AuthService } from "../../auth/auth.service.js";
+import { FixedWindowRateLimiter } from "../../auth/auth.rate-limit.js";
 
 declare module "socket.io" {
   interface SocketData {
@@ -8,9 +9,17 @@ declare module "socket.io" {
   }
 }
 
-export function createAuthenticationMiddleware(authService: AuthService) {
+export function createAuthenticationMiddleware(
+  authService: AuthService,
+  rateLimiter: FixedWindowRateLimiter,
+) {
   return async (socket: Socket, next: (error?: Error) => void) => {
     try {
+      const result = rateLimiter.consume(`handshake:${socket.handshake.address}`);
+      if (!result.allowed) {
+        next(new Error("RATE_LIMITED"));
+        return;
+      }
       const token = readCookie(
         socket.handshake.headers.cookie,
         authService.sessionCookie,

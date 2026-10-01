@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAuthenticationMiddleware } from "./middleware/authentication.js";
+import { FixedWindowRateLimiter } from "../auth/auth.rate-limit.js";
 
 describe("realtime authentication", () => {
   it("authenticates a socket from the session cookie", async () => {
@@ -33,7 +34,10 @@ describe("realtime authentication", () => {
     };
     const next = vi.fn();
 
-    await createAuthenticationMiddleware(authService as never)(
+    await createAuthenticationMiddleware(
+      authService as never,
+      new FixedWindowRateLimiter(10, 60_000),
+    )(
       socket as never,
       next,
     );
@@ -54,7 +58,10 @@ describe("realtime authentication", () => {
     };
     const next = vi.fn();
 
-    await createAuthenticationMiddleware(authService as never)(
+    await createAuthenticationMiddleware(
+      authService as never,
+      new FixedWindowRateLimiter(10, 60_000),
+    )(
       socket as never,
       next,
     );
