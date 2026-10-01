@@ -58,6 +58,42 @@ export class RoomService {
     return this.details(roomId);
   }
 
+  public async updateRules(
+    authenticated: AuthenticatedUser,
+    roomId: string,
+    expectedVersion: number,
+    rules: VersionedRules<RoomRules>,
+  ): Promise<RoomDetails> {
+    await this.repository.updateRoomRules(
+      roomId,
+      authenticated.user.id,
+      expectedVersion,
+      rules,
+    );
+    return this.details(roomId);
+  }
+
+  public async transferHost(
+    authenticated: AuthenticatedUser,
+    roomId: string,
+    nextHostUserId: string,
+  ): Promise<RoomDetails> {
+    await this.repository.transferHost(
+      roomId,
+      authenticated.user.id,
+      nextHostUserId,
+    );
+    return this.details(roomId);
+  }
+
+  public async close(
+    authenticated: AuthenticatedUser,
+    roomId: string,
+  ): Promise<RoomDetails> {
+    await this.repository.closeRoom(roomId, authenticated.user.id);
+    return this.details(roomId);
+  }
+
   private async createUniqueCode(): Promise<string> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = randomBytes(3).toString("hex").toUpperCase();

@@ -99,4 +99,58 @@ describe("rooms HTTP integration", () => {
     });
     await app.close();
   });
+
+  it("supports host transfer, rules update, and room closure", async () => {
+    const first = await createAuthenticatedApp();
+    const secondGuest = await first.app.inject({
+      method: "POST",
+      url: "/auth/guest",
+      payload: {},
+    });
+    const secondCookie = cookieHeader(secondGuest.headers["set-cookie"]);
+    const created = await first.app.inject({
+      method: "POST",
+      url: "/rooms",
+      headers: { cookie: first.cookie },
+      payload: { name: "Lifecycle room", capacity: 3 },
+    });
+    const roomId = created.json().id as string;
+    await first.app.inject({
+      method: "POST",
+      url: `/rooms/${roomId}/join`,
+      headers: { cookie: secondCookie },
+    });
+
+    const transferred = await first.app.inject({
+      method: "POST",
+      url: `/rooms/${roomId}/host`,
+      headers: { cookie: first.cookie },
+      payload: { nextHostUserId: secondGuest.json().id },
+    });
+    expect(transferred.statusCode).toBe(200);
+    expect(transferred.json().hostUserId).toBe(secondGuest.json().id);
+
+    const updated = await first.app.inject({
+      method: "PUT",
+      url: `/rooms/${roomId}/rules`,
+      headers: { cookie: secondCookie },
+      payload: { expectedVersion: transferred.json().version, rulesVersion: 1, rules: {} },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().currentRules).toEqual({ rulesVersion: 1, rules: {} });
+
+    const closed = await first.app.inject({
+      method: "POST",
+      url: `/rooms/${roomId}/close`,
+      headers: { cookie: secondCookie },
+    });
+    expect(closed.statusCode).toBe(204);
+    const details = await first.app.inject({
+      method: "GET",
+      url: `/rooms/${roomId}`,
+      headers: { cookie: secondCookie },
+    });
+    expect(details.json().status).toBe("closed");
+    await first.app.close();
+  });
 });

@@ -122,8 +122,13 @@ GET  /rooms/:roomId
 POST /rooms/:roomId/join
 POST /rooms/:roomId/leave
 POST /rooms/:roomId/ready
+PUT  /rooms/:roomId/rules
+POST /rooms/:roomId/host
+POST /rooms/:roomId/close
 ```
 
+Операції rules, host transfer і close доступні лише в межах waiting lifecycle;
+оновлення rules використовує optimistic concurrency через `expectedVersion`.
 Поточний локальний режим використовує in-memory repository для кімнат до
 підключення `PgRoomRepository`; application service і routes залежать від
 узгодженого `RoomRepository` contract.

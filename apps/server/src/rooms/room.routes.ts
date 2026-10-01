@@ -11,6 +11,12 @@ const createRoomBody = z.object({
   capacity: z.number().int().min(3).max(4).default(4),
 });
 const readyBody = z.object({ ready: z.boolean() });
+const updateRulesBody = z.object({
+  expectedVersion: z.number().int().positive(),
+  rulesVersion: z.number().int().positive(),
+  rules: z.record(z.string(), z.never()),
+});
+const transferHostBody = z.object({ nextHostUserId: z.string().min(1) });
 
 export async function registerRoomRoutes(
   app: FastifyInstance,
@@ -59,6 +65,38 @@ export async function registerRoomRoutes(
       ready,
     );
     return reply.send(toRoomResponse(details));
+  });
+
+  app.put("/rooms/:roomId/rules", async (request, reply) => {
+    const authenticated = await requireAuthentication(request, authService);
+    const { roomId } = roomIdParams.parse(request.params);
+    const input = updateRulesBody.parse(request.body);
+    const details = await roomService.updateRules(
+      authenticated,
+      roomId,
+      input.expectedVersion,
+      { rulesVersion: input.rulesVersion, rules: {} },
+    );
+    return reply.send(toRoomResponse(details));
+  });
+
+  app.post("/rooms/:roomId/host", async (request, reply) => {
+    const authenticated = await requireAuthentication(request, authService);
+    const { roomId } = roomIdParams.parse(request.params);
+    const { nextHostUserId } = transferHostBody.parse(request.body);
+    const details = await roomService.transferHost(
+      authenticated,
+      roomId,
+      nextHostUserId,
+    );
+    return reply.send(toRoomResponse(details));
+  });
+
+  app.post("/rooms/:roomId/close", async (request, reply) => {
+    const authenticated = await requireAuthentication(request, authService);
+    const { roomId } = roomIdParams.parse(request.params);
+    await roomService.close(authenticated, roomId);
+    return reply.code(204).send();
   });
 }
 
