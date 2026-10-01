@@ -119,9 +119,17 @@ composition root і передає модулям лише потрібні їм
 `DATABASE_URL`, `MOCK_DB_PATH`, Google OAuth credentials,
 `SESSION_TTL_SECONDS` і `OAUTH_STATE_TTL_SECONDS`. Google OAuth конфігурація
 має бути або повністю відсутня, або повністю задана. `DATABASE_URL` і
-`CORS_ORIGIN` поки лише валідовуються та передаються як підготовлений config
-surface; підключення database pool і CORS plugin належить відповідним
-майбутнім модулям.
+`CORS_ORIGIN` валідовуються та передаються як config surface: перший вибирає
+PostgreSQL repositories, а другий налаштовує credentialed CORS для HTTP і
+Socket.IO. Міграції та database lifecycle залишаються поза application server.
+
+Health, auth і authenticated room endpoints, Socket.IO handshake та room events
+обмежуються локальним fixed-window rate limiter за IP, маршрутом, user ID або
+event name. Ліміт та вікно задаються `AUTH_RATE_LIMIT_MAX` і
+`AUTH_RATE_LIMIT_WINDOW_SECONDS`; перевищення повертає `429 RATE_LIMITED`.
+Поточне in-memory сховище достатнє для одного процесу та не є distributed
+захистом. Перед горизонтальним масштабуванням storage потрібно замінити на
+спільне atomic сховище, не змінюючи route-level contract.
 
 Feature- та infrastructure-модулі не повинні напряму читати `process.env` або
 залежати від глобального mutable config singleton. Явні залежності роблять
@@ -182,6 +190,19 @@ realtime/
 Socket middleware перевіряє session cookie та прикріплює користувача до
 socket context. Authentication не означає автоматичний доступ до кожної
 кімнати: authorization перевіряється окремо в application service.
+
+Поточний realtime transport створюється в composition root через
+`createRealtimeServer(app.server, authService, roomService, authConfig, serverConfig)`.
+The returned Socket.IO server is closed through Fastify's `onClose` hook.
+Middleware
+автентифікує Socket.IO handshake за тією самою session cookie, що й HTTP.
+Room events проходять через Zod validation і викликають `RoomService`; сама
+Socket.IO room є лише transport projection, а не джерелом стану.
+
+Composition root вибирає persistence adapter за `DATABASE_URL`: PostgreSQL
+режим створює один shared pool і передає `PgAuthRepository` та
+`PgRoomRepository` у application services. Без цього variable використовується
+локальний mock/in-memory режим. Міграції не запускаються автоматично сервером.
 
 Handlers:
 

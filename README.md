@@ -41,6 +41,8 @@ workspaces; базові каркаси клієнта, сервера та сп
 | `packages/game/src/` | Правила, перевірка дій, переходи стану та підрахунок результатів |
 | `packages/game/tests/` | Тести ігрових правил |
 | `packages/shared/src/` | Публічні типи та схеми перевірки команд і відповідей |
+| `docs/api/` | Server architecture та HTTP/Socket.IO API contract для frontend |
+| `docs/database/` | Database architecture, contracts і persistence documentation |
 | `deploy/` | Конфігурація Nginx, systemd та сценарії розгортання без секретів |
 | `.github/workflows/` | Перевірки pull request і деплой |
 
@@ -114,17 +116,41 @@ GET  /auth/me
 POST /auth/logout
 ```
 
+Перший HTTP-зріз lobby використовує server-side session і надає:
+
+```text
+POST /rooms
+GET  /rooms/:roomId
+POST /rooms/:roomId/join
+POST /rooms/:roomId/leave
+POST /rooms/:roomId/ready
+PUT  /rooms/:roomId/rules
+POST /rooms/:roomId/host
+POST /rooms/:roomId/close
+```
+
+Повний поточний transport-контракт для frontend знаходиться в
+[`docs/api/FRONTEND_API.md`](docs/api/FRONTEND_API.md), а межі server modules —
+у [`docs/api/SERVER_ARCHITECTURE.md`](docs/api/SERVER_ARCHITECTURE.md).
+
+Операції rules, host transfer і close доступні лише в межах waiting lifecycle;
+оновлення rules використовує optimistic concurrency через `expectedVersion`.
+Якщо задано `DATABASE_URL`, composition root створює спільний PostgreSQL pool
+і використовує `PgAuthRepository` та `PgRoomRepository` для HTTP і Socket.IO.
+Без `DATABASE_URL` локальний режим використовує mock auth repository та
+in-memory room repository. Міграції запускаються окремим database/deployment
+процесом і не виконуються автоматично під час старту application server.
+
 Гостьова, password і Google OAuth авторизація використовують спільну серверну
 сесію в `HttpOnly` cookie. Password-користувачі реєструються через
 `POST /auth/register` з username і паролем, а входять через
 `POST /auth/login`. Паролі не зберігаються у відкритому вигляді: використовується
 Node.js `scrypt` із випадковою сіллю.
 
-Поки
-PostgreSQL ще не підключений, користувачі та сесії зберігаються у локальному
-JSON-файлі `apps/server/data/mock-db.json`. Файл створюється автоматично,
-ігнорується Git і призначений лише для локальної розробки та тестування.
-Шлях до нього можна змінити через `MOCK_DB_PATH`.
+Без `DATABASE_URL` користувачі та сесії зберігаються у локальному JSON-файлі
+`apps/server/data/mock-db.json`, а кімнати — in-memory repository. Файл
+створюється автоматично, ігнорується Git і призначений лише для локальної
+розробки та тестування. Шлях до нього можна змінити через `MOCK_DB_PATH`.
 
 Для Google OAuth потрібно створити OAuth 2.0 Web application у Google Cloud
 Console і додати redirect URI:
@@ -149,8 +175,15 @@ session TTL 30 днів і OAuth state TTL 10 хвилин. Їх можна зм
 `SESSION_TTL_SECONDS` та `OAUTH_STATE_TTL_SECONDS`. Google OAuth або повністю
 вимкнений, або потребує одночасного заповнення `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET` і `GOOGLE_REDIRECT_URI`; часткова конфігурація є
-помилкою запуску. `DATABASE_URL` і `CORS_ORIGIN` уже розпізнаються config
-loader-ом для майбутніх server-модулів, але ще не підключають DB або CORS.
+помилкою запуску. `DATABASE_URL` вибирає PostgreSQL repositories, а
+`CORS_ORIGIN` підключає credentialed CORS для вказаного frontend origin.
+Усі HTTP endpoints мають fixed-window rate limit через
+`@fastify/rate-limit`, а Socket.IO handshake та room events мають окремий
+limiter. За замовчуванням дозволено 10 запитів за 60 секунд. Значення
+налаштовуються через `AUTH_RATE_LIMIT_MAX` і
+`AUTH_RATE_LIMIT_WINDOW_SECONDS`; перевищення повертає HTTP 429 або Socket.IO
+`RATE_LIMITED`. Поточне сховище process-local, тому для кількох інстансів у
+майбутньому потрібне shared atomic storage.
 
 Модулі авторизації, кімнат, realtime-взаємодії, доступу до БД та ігрових сесій
 розміщуються в `apps/server/src/`; їхня реалізація додаватиметься без зміни

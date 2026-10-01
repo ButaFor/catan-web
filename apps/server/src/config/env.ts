@@ -33,6 +33,8 @@ const rawEnvironmentSchema = z
     GOOGLE_REDIRECT_URI: optionalUrl,
     SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
     OAUTH_STATE_TTL_SECONDS: z.coerce.number().int().positive().default(60 * 10),
+    AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   })
   .superRefine((environment, context) => {
     const googleValues = [
@@ -93,6 +95,8 @@ export function loadConfig(
       sessionTtlMs: values.SESSION_TTL_SECONDS * 1000,
       oauthStateTtlSeconds: values.OAUTH_STATE_TTL_SECONDS,
       secureCookies: nodeEnv === "production",
+      rateLimitMax: values.AUTH_RATE_LIMIT_MAX,
+      rateLimitWindowSeconds: values.AUTH_RATE_LIMIT_WINDOW_SECONDS,
     },
     database: {
       ...(values.DATABASE_URL ? { url: values.DATABASE_URL } : {}),

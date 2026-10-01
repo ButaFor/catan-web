@@ -18,6 +18,8 @@ export type AuthConfig = {
   sessionTtlMs: number;
   oauthStateTtlSeconds: number;
   secureCookies: boolean;
+  rateLimitMax: number;
+  rateLimitWindowSeconds: number;
 };
 
 export type DatabaseConfig = {

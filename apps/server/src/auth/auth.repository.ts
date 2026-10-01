@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { OAuthAccount, Session, User } from "./auth.types.js";
+import {
+  normalizeEmail,
+  type AuthRepositoryPort,
+  type CreateOAuthUser,
+  type OAuthAccount,
+  type Session,
+  type User,
+} from "../db/contracts/auth.js";
 
 type MockDatabase = {
   users: User[];
@@ -15,7 +22,7 @@ const emptyDatabase: MockDatabase = {
   oauthAccounts: [],
 };
 
-export class AuthRepository {
+export class AuthRepository implements AuthRepositoryPort {
   private writeQueue: Promise<void> = Promise.resolve();
 
   public constructor(private readonly filePath: string) {}
@@ -34,19 +41,15 @@ export class AuthRepository {
     return user;
   }
 
-  public async createOAuthUser(input: {
-    displayName: string;
-    email: string;
-    avatarUrl?: string;
-    providerAccountId: string;
-  }): Promise<User> {
+  public async createOAuthUser(input: CreateOAuthUser): Promise<User> {
     const database = await this.readDatabase();
     const user: User = {
       id: randomUUID(),
       displayName: input.displayName,
       isGuest: false,
       createdAt: new Date().toISOString(),
-      email: input.email,
+      email: normalizeEmail(input.email),
+      emailVerified: true,
       ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
     };
 
@@ -108,7 +111,10 @@ export class AuthRepository {
 
   public async findUserByEmail(email: string): Promise<User | undefined> {
     const database = await this.readDatabase();
-    return database.users.find((user) => user.email === email);
+    const normalizedEmail = normalizeEmail(email);
+    return database.users.find(
+      (user) => user.email && normalizeEmail(user.email) === normalizedEmail,
+    );
   }
 
   public async linkOAuthAccount(

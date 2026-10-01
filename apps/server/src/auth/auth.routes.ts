@@ -33,44 +33,62 @@ export async function registerAuthRoutes(
     maxAge: config.oauthStateTtlSeconds,
   };
 
-  app.post("/auth/guest", async (request, reply) => {
-    createGuestSchema.parse(request.body ?? {});
-    const { user, token } = await authService.createGuest();
+  app.post(
+    "/auth/guest",
+    async (request, reply) => {
+      createGuestSchema.parse(request.body ?? {});
+      const { user, token } = await authService.createGuest();
 
-    reply.setCookie(authService.sessionCookie, token, cookieOptions);
-    return reply.code(201).send(userResponseSchema.parse(toUserResponse(user)));
-  });
+      reply.setCookie(authService.sessionCookie, token, cookieOptions);
+      return reply
+        .code(201)
+        .send(userResponseSchema.parse(toUserResponse(user)));
+    },
+  );
 
-  app.post("/auth/register", async (request, reply) => {
-    const input = registerSchema.parse(request.body);
-    const { user, token } = await authService.register(
-      input.username,
-      input.password,
-    );
-    reply.setCookie(authService.sessionCookie, token, cookieOptions);
-    return reply.code(201).send(userResponseSchema.parse(toUserResponse(user)));
-  });
+  app.post(
+    "/auth/register",
+    async (request, reply) => {
+      const input = registerSchema.parse(request.body);
+      const { user, token } = await authService.register(
+        input.username,
+        input.password,
+      );
+      reply.setCookie(authService.sessionCookie, token, cookieOptions);
+      return reply
+        .code(201)
+        .send(userResponseSchema.parse(toUserResponse(user)));
+    },
+  );
 
-  app.post("/auth/login", async (request, reply) => {
-    const input = loginSchema.parse(request.body);
-    const { user, token } = await authService.login(
-      input.username,
-      input.password,
-    );
-    reply.setCookie(authService.sessionCookie, token, cookieOptions);
-    return reply.send(userResponseSchema.parse(toUserResponse(user)));
-  });
+  app.post(
+    "/auth/login",
+    async (request, reply) => {
+      const input = loginSchema.parse(request.body);
+      const { user, token } = await authService.login(
+        input.username,
+        input.password,
+      );
+      reply.setCookie(authService.sessionCookie, token, cookieOptions);
+      return reply.send(userResponseSchema.parse(toUserResponse(user)));
+    },
+  );
 
-  app.get("/auth/me", async (request, reply) => {
+  app.get(
+    "/auth/me",
+    async (request, reply) => {
     const authenticated = await authenticateRequest(request, authService);
     if (!authenticated) {
       throw new AuthenticationError();
     }
 
     return userResponseSchema.parse(toUserResponse(authenticated.user));
-  });
+    },
+  );
 
-  app.post("/auth/logout", async (request, reply) => {
+  app.post(
+    "/auth/logout",
+    async (request, reply) => {
     const token = request.cookies[authService.sessionCookie];
     if (token) {
       await authService.revoke(token);
@@ -78,59 +96,71 @@ export async function registerAuthRoutes(
 
     reply.clearCookie(authService.sessionCookie, cookieOptions);
     return reply.code(204).send();
-  });
+    },
+  );
 
-  app.get("/auth/google", async (_request, reply) => {
-    const authorization = googleOAuth.createAuthorization();
-    reply
-      .setCookie("google_oauth_state", authorization.state, oauthCookieOptions)
-      .setCookie(
-        "google_oauth_verifier",
-        authorization.verifier,
-        oauthCookieOptions,
+  app.get(
+    "/auth/google",
+    async (_request, reply) => {
+      const authorization = googleOAuth.createAuthorization();
+      reply
+        .setCookie(
+          "google_oauth_state",
+          authorization.state,
+          oauthCookieOptions,
+        )
+        .setCookie(
+          "google_oauth_verifier",
+          authorization.verifier,
+          oauthCookieOptions,
+        );
+      return reply.redirect(authorization.url);
+    },
+  );
+
+  app.get(
+    "/auth/google/callback",
+    async (request, reply) => {
+      const query = googleCallbackSchema.parse(request.query);
+      if (query.error) {
+        return reply.code(400).send({
+          code: "GOOGLE_AUTHORIZATION_DENIED",
+          message: "Google authorization was denied",
+        });
+      }
+
+      if (!query.code) {
+        return reply.code(400).send({
+          code: "MISSING_GOOGLE_CODE",
+          message: "Google authorization code is missing",
+        });
+      }
+
+      const expectedState = request.cookies.google_oauth_state;
+      const verifier = request.cookies.google_oauth_verifier;
+      if (
+        !expectedState ||
+        !verifier ||
+        !GoogleOAuthService.verifyState(expectedState, query.state)
+      ) {
+        return reply.code(400).send({
+          code: "INVALID_OAUTH_STATE",
+          message: "OAuth state is invalid or expired",
+        });
+      }
+
+      const { token, user } = await googleOAuth.completeAuthorization(
+        query.code,
+        verifier,
       );
-    return reply.redirect(authorization.url);
-  });
-
-  app.get("/auth/google/callback", async (request, reply) => {
-    const query = googleCallbackSchema.parse(request.query);
-    if (query.error) {
-      return reply.code(400).send({
-        code: "GOOGLE_AUTHORIZATION_DENIED",
-        message: "Google authorization was denied",
-      });
-    }
-    if (!query.code) {
-      return reply.code(400).send({
-        code: "MISSING_GOOGLE_CODE",
-        message: "Google authorization code is missing",
-      });
-    }
-
-    const expectedState = request.cookies.google_oauth_state;
-    const verifier = request.cookies.google_oauth_verifier;
-    if (
-      !expectedState ||
-      !verifier ||
-      !GoogleOAuthService.verifyState(expectedState, query.state)
-    ) {
-      return reply.code(400).send({
-        code: "INVALID_OAUTH_STATE",
-        message: "OAuth state is invalid or expired",
-      });
-    }
-
-    const { token, user } = await googleOAuth.completeAuthorization(
-      query.code,
-      verifier,
-    );
-    reply
-      .setCookie(authService.sessionCookie, token, cookieOptions)
-      .clearCookie("google_oauth_state", cookieOptions)
-      .clearCookie("google_oauth_verifier", cookieOptions);
-    return reply.send(toUserResponse(user));
+      reply
+        .setCookie(authService.sessionCookie, token, cookieOptions)
+        .clearCookie("google_oauth_state", cookieOptions)
+        .clearCookie("google_oauth_verifier", cookieOptions);
+      return reply.send(toUserResponse(user));
   });
 }
+
 
 export async function authenticateRequest(
   request: FastifyRequest,

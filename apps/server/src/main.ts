@@ -1,21 +1,40 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
+import type { Pool } from "pg";
+import {
+  createPool,
+  PgAuthRepository,
+  PgRoomRepository,
+} from "./db/index.js";
 import { AuthRepository } from "./auth/auth.repository.js";
 import { registerAuthRoutes } from "./auth/auth.routes.js";
 import { AuthService } from "./auth/auth.service.js";
 import { GoogleOAuthService } from "./auth/oauth/google.service.js";
 import { loadConfig } from "./config/env.js";
 import type { AppConfig } from "./config/types.js";
-import {
-  InvalidCredentialsError,
-  OAuthConfigurationError,
-  UsernameTakenError,
-} from "./auth/auth.errors.js";
+import { InMemoryRoomRepository } from "./rooms/room.repository.js";
+import { registerRoomRoutes } from "./rooms/room.routes.js";
+import { RoomService } from "./rooms/room.service.js";
+import { roomRulesCodec } from "./rooms/room.rules.codec.js";
+import { registerCors } from "./http/plugins/cors.js";
+import { registerErrorHandler } from "./http/plugins/error-handler.js";
+import { registerHealthRoutes } from "./http/routes/health.routes.js";
+import { createRealtimeServer } from "./realtime/socket.js";
 
 export function buildApp(config: AppConfig = loadConfig()) {
  const app = Fastify({ logger: true });
- const authRepository = new AuthRepository(config.database.mockDbPath);
+ const pool: Pool | undefined = config.database.url
+   ? createPool({ connectionString: config.database.url })
+   : undefined;
+ const authRepository = pool
+   ? new PgAuthRepository(pool)
+   : new AuthRepository(config.database.mockDbPath);
  const authService = new AuthService(authRepository, config.auth);
+ const roomRepository = pool
+   ? new PgRoomRepository(pool, roomRulesCodec)
+   : new InMemoryRoomRepository();
+ const roomService = new RoomService(roomRepository);
  const googleOAuth = new GoogleOAuthService(
    authRepository,
    authService,
@@ -23,55 +42,39 @@ export function buildApp(config: AppConfig = loadConfig()) {
  );
 
  app.register(cookie);
- app.get("/health", async () => ({ status: "ok" }));
+ app.register(rateLimit, {
+   global: true,
+   max: config.auth.rateLimitMax,
+   timeWindow: config.auth.rateLimitWindowSeconds * 1000,
+   errorResponseBuilder: () => ({
+     statusCode: 429,
+     code: "RATE_LIMITED",
+     message: "Too many requests",
+   }),
+ });
+ registerCors(app, config.server);
+ registerHealthRoutes(app);
  app.register(async (instance) =>
    registerAuthRoutes(instance, authService, googleOAuth, config.auth),
  );
-
- app.setErrorHandler((error, request, reply) => {
-   const errorObject = error instanceof Error ? error : undefined;
-   const errorName = errorObject?.name;
-
-   if (errorName === "ZodError") {
-     return reply.code(400).send({
-       code: "INVALID_REQUEST",
-       message: "Request data is invalid",
-     });
-   }
-
-   if (errorObject?.name === "AuthenticationError") {
-     return reply.code(401).send({
-       code: "AUTHENTICATION_REQUIRED",
-       message: errorObject.message,
-     });
-   }
-
-   if (errorObject instanceof OAuthConfigurationError) {
-     return reply.code(503).send({
-       code: errorObject.code,
-       message: "Google OAuth is not configured",
-     });
-   }
-
-   if (errorObject instanceof InvalidCredentialsError) {
-     return reply.code(401).send({
-       code: errorObject.code,
-       message: errorObject.message,
-     });
-   }
-
-   if (errorObject instanceof UsernameTakenError) {
-     return reply.code(409).send({
-       code: errorObject.code,
-       message: errorObject.message,
-     });
-   }
-
-   request.log.error(error instanceof Error ? error : { error });
-   return reply.code(500).send({
-     code: "INTERNAL_SERVER_ERROR",
-     message: "An unexpected error occurred",
+ app.register(async (instance) =>
+   registerRoomRoutes(instance, roomService, authService),
+ );
+ registerErrorHandler(app);
+ if (pool) {
+   app.addHook("onClose", async () => {
+     await pool.end();
    });
+ }
+ const io = createRealtimeServer(
+   app.server,
+   authService,
+   roomService,
+   config.auth,
+   config.server,
+ );
+ app.addHook("onClose", async () => {
+   await new Promise<void>((resolve) => io.close(() => resolve()));
  });
 
  return app;
