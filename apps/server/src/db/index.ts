@@ -1,0 +1,13 @@
+export { createPool } from "./pool.js";
+export type { DatabaseConfig } from "./pool.js";
+export { checkDatabase } from "./health.js";
+export { migrate } from "./migrate.js";
+export { RepositoryError } from "./repository.errors.js";
+export type { RepositoryErrorCode } from "./repository.errors.js";
+export { PgAuthRepository } from "./repositories/pg-auth.repository.js";
+export { PgRoomRepository } from "./repositories/pg-room.repository.js";
+export { PgGameRepository } from "./repositories/pg-game.repository.js";
+export type * from "./contracts/auth.js";
+export { normalizeEmail } from "./contracts/auth.js";
+export type * from "./contracts/room.js";
+export type * from "./contracts/game.js";
