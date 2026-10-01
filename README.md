@@ -129,9 +129,11 @@ POST /rooms/:roomId/close
 
 Операції rules, host transfer і close доступні лише в межах waiting lifecycle;
 оновлення rules використовує optimistic concurrency через `expectedVersion`.
-Поточний локальний режим використовує in-memory repository для кімнат до
-підключення `PgRoomRepository`; application service і routes залежать від
-узгодженого `RoomRepository` contract.
+Якщо задано `DATABASE_URL`, composition root створює спільний PostgreSQL pool
+і використовує `PgAuthRepository` та `PgRoomRepository` для HTTP і Socket.IO.
+Без `DATABASE_URL` локальний режим використовує mock auth repository та
+in-memory room repository. Міграції запускаються окремим database/deployment
+процесом і не виконуються автоматично під час старту application server.
 
 Гостьова, password і Google OAuth авторизація використовують спільну серверну
 сесію в `HttpOnly` cookie. Password-користувачі реєструються через

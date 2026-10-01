@@ -196,6 +196,11 @@ socket context. Authentication не означає автоматичний до
 Room events проходять через Zod validation і викликають `RoomService`; сама
 Socket.IO room є лише transport projection, а не джерелом стану.
 
+Composition root вибирає persistence adapter за `DATABASE_URL`: PostgreSQL
+режим створює один shared pool і передає `PgAuthRepository` та
+`PgRoomRepository` у application services. Без цього variable використовується
+локальний mock/in-memory режим. Міграції не запускаються автоматично сервером.
+
 Handlers:
 
 1. приймають event payload;
