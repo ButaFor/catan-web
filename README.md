@@ -114,6 +114,20 @@ GET  /auth/me
 POST /auth/logout
 ```
 
+Перший HTTP-зріз lobby використовує server-side session і надає:
+
+```text
+POST /rooms
+GET  /rooms/:roomId
+POST /rooms/:roomId/join
+POST /rooms/:roomId/leave
+POST /rooms/:roomId/ready
+```
+
+Поточний локальний режим використовує in-memory repository для кімнат до
+підключення `PgRoomRepository`; application service і routes залежать від
+узгодженого `RoomRepository` contract.
+
 Гостьова, password і Google OAuth авторизація використовують спільну серверну
 сесію в `HttpOnly` cookie. Password-користувачі реєструються через
 `POST /auth/register` з username і паролем, а входять через

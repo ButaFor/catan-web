@@ -12,11 +12,15 @@ import {
   UsernameTakenError,
 } from "./auth/auth.errors.js";
 import { RepositoryError } from "./db/repository.errors.js";
+import { InMemoryRoomRepository } from "./rooms/room.repository.js";
+import { registerRoomRoutes } from "./rooms/room.routes.js";
+import { RoomService } from "./rooms/room.service.js";
 
 export function buildApp(config: AppConfig = loadConfig()) {
  const app = Fastify({ logger: true });
  const authRepository = new AuthRepository(config.database.mockDbPath);
  const authService = new AuthService(authRepository, config.auth);
+ const roomService = new RoomService(new InMemoryRoomRepository());
  const googleOAuth = new GoogleOAuthService(
    authRepository,
    authService,
@@ -27,6 +31,9 @@ export function buildApp(config: AppConfig = loadConfig()) {
  app.get("/health", async () => ({ status: "ok" }));
  app.register(async (instance) =>
    registerAuthRoutes(instance, authService, googleOAuth, config.auth),
+ );
+ app.register(async (instance) =>
+   registerRoomRoutes(instance, roomService, authService),
  );
 
  app.setErrorHandler((error, request, reply) => {

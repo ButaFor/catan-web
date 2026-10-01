@@ -1,0 +1,102 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+process.env.NODE_ENV = "test";
+process.env.GOOGLE_CLIENT_ID = "test-client";
+process.env.GOOGLE_CLIENT_SECRET = "test-secret";
+process.env.GOOGLE_REDIRECT_URI =
+  "http://127.0.0.1:3000/auth/google/callback";
+
+const { buildApp } = await import("../main.js");
+const { loadConfig } = await import("../config/env.js");
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function cookieHeader(setCookie: string | string[] | undefined): string {
+  const cookies = Array.isArray(setCookie)
+    ? setCookie
+    : setCookie
+      ? [setCookie]
+      : [];
+  return cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+}
+
+async function createAuthenticatedApp() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "catan-room-"));
+  temporaryDirectories.push(directory);
+  process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
+  const app = buildApp(loadConfig());
+  await app.ready();
+  const guest = await app.inject({
+    method: "POST",
+    url: "/auth/guest",
+    payload: {},
+  });
+  return { app, cookie: cookieHeader(guest.headers["set-cookie"]) };
+}
+
+describe("rooms HTTP integration", () => {
+  it("creates, reads, joins, and updates readiness", async () => {
+    const first = await createAuthenticatedApp();
+    const created = await first.app.inject({
+      method: "POST",
+      url: "/rooms",
+      headers: { cookie: first.cookie },
+      payload: { name: "Test room", capacity: 3 },
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      name: "Test room",
+      capacity: 3,
+      status: "waiting",
+      members: [{ ready: false }],
+    });
+    const roomId = created.json().id as string;
+
+    const details = await first.app.inject({
+      method: "GET",
+      url: `/rooms/${roomId}`,
+      headers: { cookie: first.cookie },
+    });
+    expect(details.statusCode).toBe(200);
+    expect(details.json().members).toHaveLength(1);
+
+    const ready = await first.app.inject({
+      method: "POST",
+      url: `/rooms/${roomId}/ready`,
+      headers: { cookie: first.cookie },
+      payload: { ready: true },
+    });
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json().members[0].ready).toBe(true);
+    await first.app.close();
+  });
+
+  it("requires authentication for room operations", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "catan-room-"));
+    temporaryDirectories.push(directory);
+    process.env.MOCK_DB_PATH = path.join(directory, "mock-db.json");
+    const app = buildApp(loadConfig());
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/rooms",
+      payload: { name: "Private room", capacity: 4 },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      code: "AUTHENTICATION_REQUIRED",
+    });
+    await app.close();
+  });
+});
