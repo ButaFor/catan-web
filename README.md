@@ -41,6 +41,8 @@ workspaces; базові каркаси клієнта, сервера та сп
 | `packages/game/src/` | Правила, перевірка дій, переходи стану та підрахунок результатів |
 | `packages/game/tests/` | Тести ігрових правил |
 | `packages/shared/src/` | Публічні типи та схеми перевірки команд і відповідей |
+| `docs/api/` | Server architecture та HTTP/Socket.IO API contract для frontend |
+| `docs/database/` | Database architecture, contracts і persistence documentation |
 | `deploy/` | Конфігурація Nginx, systemd та сценарії розгортання без секретів |
 | `.github/workflows/` | Перевірки pull request і деплой |
 
@@ -127,6 +129,10 @@ POST /rooms/:roomId/host
 POST /rooms/:roomId/close
 ```
 
+Повний поточний transport-контракт для frontend знаходиться в
+[`docs/api/FRONTEND_API.md`](docs/api/FRONTEND_API.md), а межі server modules —
+у [`docs/api/SERVER_ARCHITECTURE.md`](docs/api/SERVER_ARCHITECTURE.md).
+
 Операції rules, host transfer і close доступні лише в межах waiting lifecycle;
 оновлення rules використовує optimistic concurrency через `expectedVersion`.
 Якщо задано `DATABASE_URL`, composition root створює спільний PostgreSQL pool
@@ -141,11 +147,10 @@ in-memory room repository. Міграції запускаються окрем�
 `POST /auth/login`. Паролі не зберігаються у відкритому вигляді: використовується
 Node.js `scrypt` із випадковою сіллю.
 
-Поки
-PostgreSQL ще не підключений, користувачі та сесії зберігаються у локальному
-JSON-файлі `apps/server/data/mock-db.json`. Файл створюється автоматично,
-ігнорується Git і призначений лише для локальної розробки та тестування.
-Шлях до нього можна змінити через `MOCK_DB_PATH`.
+Без `DATABASE_URL` користувачі та сесії зберігаються у локальному JSON-файлі
+`apps/server/data/mock-db.json`, а кімнати — in-memory repository. Файл
+створюється автоматично, ігнорується Git і призначений лише для локальної
+розробки та тестування. Шлях до нього можна змінити через `MOCK_DB_PATH`.
 
 Для Google OAuth потрібно створити OAuth 2.0 Web application у Google Cloud
 Console і додати redirect URI:
