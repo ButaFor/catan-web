@@ -119,9 +119,9 @@ composition root і передає модулям лише потрібні їм
 `DATABASE_URL`, `MOCK_DB_PATH`, Google OAuth credentials,
 `SESSION_TTL_SECONDS` і `OAUTH_STATE_TTL_SECONDS`. Google OAuth конфігурація
 має бути або повністю відсутня, або повністю задана. `DATABASE_URL` і
-`CORS_ORIGIN` поки лише валідовуються та передаються як підготовлений config
-surface; підключення database pool і CORS plugin належить відповідним
-майбутнім модулям.
+`CORS_ORIGIN` валідовуються та передаються як config surface: перший вибирає
+PostgreSQL repositories, а другий налаштовує credentialed CORS для HTTP і
+Socket.IO. Міграції та database lifecycle залишаються поза application server.
 
 Health, auth і authenticated room endpoints, Socket.IO handshake та room events
 обмежуються локальним fixed-window rate limiter за IP, маршрутом, user ID або
@@ -192,7 +192,9 @@ socket context. Authentication не означає автоматичний до
 кімнати: authorization перевіряється окремо в application service.
 
 Поточний realtime transport створюється в composition root через
-`createRealtimeServer(app.server, authService, roomService)`. Middleware
+`createRealtimeServer(app.server, authService, roomService, authConfig, serverConfig)`.
+The returned Socket.IO server is closed through Fastify's `onClose` hook.
+Middleware
 автентифікує Socket.IO handshake за тією самою session cookie, що й HTTP.
 Room events проходять через Zod validation і викликають `RoomService`; сама
 Socket.IO room є лише transport projection, а не джерелом стану.

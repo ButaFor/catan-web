@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io";
 import { RepositoryError } from "../../db/repository.errors.js";
 import { FixedWindowRateLimiter } from "../../auth/auth.rate-limit.js";
 import { RoomService } from "../../rooms/room.service.js";
+import { toRoomResponse } from "../../rooms/room.serializer.js";
 import {
   roomJoinPayload,
   roomLeavePayload,
@@ -24,8 +25,9 @@ export function registerRoomHandlers(
         input.roomId,
       );
       await socket.join(roomChannel(input.roomId));
-      io.to(roomChannel(input.roomId)).emit(roomUpdatedEvent, details);
-      return details;
+      const response = toRoomResponse(details);
+      io.to(roomChannel(input.roomId)).emit(roomUpdatedEvent, response);
+      return response;
     });
   });
 
@@ -44,8 +46,9 @@ export function registerRoomHandlers(
         input.roomId,
         input.ready,
       );
-      io.to(roomChannel(input.roomId)).emit(roomUpdatedEvent, details);
-      return details;
+      const response = toRoomResponse(details);
+      io.to(roomChannel(input.roomId)).emit(roomUpdatedEvent, response);
+      return response;
     });
   });
 }

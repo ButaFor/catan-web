@@ -154,6 +154,34 @@ describe("rooms HTTP integration", () => {
     await first.app.close();
   });
 
+  it("rejects unsupported rules versions and malformed host ids", async () => {
+    const first = await createAuthenticatedApp();
+    const created = await first.app.inject({
+      method: "POST",
+      url: "/rooms",
+      headers: { cookie: first.cookie },
+      payload: { name: "Validation room", capacity: 3 },
+    });
+    const roomId = created.json().id as string;
+
+    const invalidRules = await first.app.inject({
+      method: "PUT",
+      url: `/rooms/${roomId}/rules`,
+      headers: { cookie: first.cookie },
+      payload: { expectedVersion: 1, rulesVersion: 2, rules: {} },
+    });
+    expect(invalidRules.statusCode).toBe(400);
+
+    const invalidHost = await first.app.inject({
+      method: "POST",
+      url: `/rooms/${roomId}/host`,
+      headers: { cookie: first.cookie },
+      payload: { nextHostUserId: "not-a-uuid" },
+    });
+    expect(invalidHost.statusCode).toBe(400);
+    await first.app.close();
+  });
+
   it("rate-limits authenticated room requests", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "catan-room-"));
     temporaryDirectories.push(directory);

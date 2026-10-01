@@ -4,6 +4,8 @@ import { authenticateRequest } from "../auth/auth.routes.js";
 import { AuthenticationError } from "../auth/auth.errors.js";
 import { AuthService } from "../auth/auth.service.js";
 import { RoomService } from "./room.service.js";
+import { toRoomResponse } from "./room.serializer.js";
+import { ROOM_RULES_VERSION } from "./room.rules.codec.js";
 
 const roomIdParams = z.object({ roomId: z.string().uuid() });
 const createRoomBody = z.object({
@@ -13,10 +15,10 @@ const createRoomBody = z.object({
 const readyBody = z.object({ ready: z.boolean() });
 const updateRulesBody = z.object({
   expectedVersion: z.number().int().positive(),
-  rulesVersion: z.number().int().positive(),
+  rulesVersion: z.literal(ROOM_RULES_VERSION),
   rules: z.record(z.string(), z.never()),
 });
-const transferHostBody = z.object({ nextHostUserId: z.string().min(1) });
+const transferHostBody = z.object({ nextHostUserId: z.string().uuid() });
 
 export async function registerRoomRoutes(
   app: FastifyInstance,
@@ -132,19 +134,4 @@ async function requireAuthentication(
   const authenticated = await authenticateRequest(request, authService);
   if (!authenticated) throw new AuthenticationError();
   return authenticated;
-}
-
-function toRoomResponse(details: Awaited<ReturnType<RoomService["details"]>>) {
-  return {
-    id: details.room.id,
-    code: details.room.code,
-    name: details.room.name,
-    hostUserId: details.room.hostUserId,
-    status: details.room.status,
-    capacity: details.room.capacity,
-    version: details.room.version,
-    currentRules: details.room.currentRules,
-    createdAt: details.room.createdAt,
-    members: details.members,
-  };
 }

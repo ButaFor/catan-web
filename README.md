@@ -175,8 +175,8 @@ session TTL 30 днів і OAuth state TTL 10 хвилин. Їх можна зм
 `SESSION_TTL_SECONDS` та `OAUTH_STATE_TTL_SECONDS`. Google OAuth або повністю
 вимкнений, або потребує одночасного заповнення `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET` і `GOOGLE_REDIRECT_URI`; часткова конфігурація є
-помилкою запуску. `DATABASE_URL` і `CORS_ORIGIN` уже розпізнаються config
-loader-ом для майбутніх server-модулів, але ще не підключають DB або CORS.
+помилкою запуску. `DATABASE_URL` вибирає PostgreSQL repositories, а
+`CORS_ORIGIN` підключає credentialed CORS для вказаного frontend origin.
 Усі HTTP endpoints мають fixed-window rate limit через
 `@fastify/rate-limit`, а Socket.IO handshake та room events мають окремий
 limiter. За замовчуванням дозволено 10 запитів за 60 секунд. Значення

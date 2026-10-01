@@ -49,6 +49,7 @@ describe("HTTP infrastructure", () => {
     expect(response.headers["access-control-allow-origin"]).toBe(
       "https://client.example",
     );
+    expect(response.headers["access-control-allow-credentials"]).toBe("true");
     await app.close();
   });
 });

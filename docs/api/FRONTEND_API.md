@@ -12,7 +12,7 @@ authentication, HTTP rooms і Socket.IO room flows. Game API ще не реал�
 
 ## 1. Environments and base URL
 
-Локальний server типовo слухає `http://127.0.0.1:3000`. Socket.IO
+Локальний server типово слухає `http://127.0.0.1:3000`. Socket.IO
 підключається до того самого origin через `/socket.io`.
 
 ```ts

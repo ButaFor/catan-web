@@ -66,7 +66,16 @@ export function buildApp(config: AppConfig = loadConfig()) {
      await pool.end();
    });
  }
- createRealtimeServer(app.server, authService, roomService, config.auth);
+ const io = createRealtimeServer(
+   app.server,
+   authService,
+   roomService,
+   config.auth,
+   config.server,
+ );
+ app.addHook("onClose", async () => {
+   await new Promise<void>((resolve) => io.close(() => resolve()));
+ });
 
  return app;
 }

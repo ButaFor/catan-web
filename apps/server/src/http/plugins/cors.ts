@@ -7,5 +7,8 @@ export function registerCors(
   config: ServerConfig,
 ): void {
   if (!config.corsOrigin) return;
-  app.register(cors, { origin: config.corsOrigin });
+  app.register(cors, {
+    origin: config.corsOrigin,
+    credentials: true,
+  });
 }
