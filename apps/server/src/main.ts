@@ -12,6 +12,7 @@ import { RoomService } from "./rooms/room.service.js";
 import { registerCors } from "./http/plugins/cors.js";
 import { registerErrorHandler } from "./http/plugins/error-handler.js";
 import { registerHealthRoutes } from "./http/routes/health.routes.js";
+import { createRealtimeServer } from "./realtime/socket.js";
 
 export function buildApp(config: AppConfig = loadConfig()) {
  const app = Fastify({ logger: true });
@@ -34,6 +35,7 @@ export function buildApp(config: AppConfig = loadConfig()) {
    registerRoomRoutes(instance, roomService, authService),
  );
  registerErrorHandler(app);
+ createRealtimeServer(app.server, authService, roomService);
 
  return app;
 }

@@ -190,6 +190,12 @@ Socket middleware перевіряє session cookie та прикріплює к
 socket context. Authentication не означає автоматичний доступ до кожної
 кімнати: authorization перевіряється окремо в application service.
 
+Поточний realtime transport створюється в composition root через
+`createRealtimeServer(app.server, authService, roomService)`. Middleware
+автентифікує Socket.IO handshake за тією самою session cookie, що й HTTP.
+Room events проходять через Zod validation і викликають `RoomService`; сама
+Socket.IO room є лише transport projection, а не джерелом стану.
+
 Handlers:
 
 1. приймають event payload;
