@@ -50,6 +50,15 @@ HTTP errors мають форму:
 | 409 | `USERNAME_TAKEN` | username уже використовується |
 | 503 | `DATABASE_UNAVAILABLE` | database тимчасово недоступна |
 
+### Health
+
+```http
+GET /health
+```
+
+Повертає `{ "status": "ok" }`. Endpoint public, але також має fixed-window
+rate limit для захисту від безконтрольного polling/abuse.
+
 ## 3. Authentication — Implemented
 
 ### Guest

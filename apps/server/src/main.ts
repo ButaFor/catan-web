@@ -42,7 +42,7 @@ export function buildApp(config: AppConfig = loadConfig()) {
 
  app.register(cookie);
  registerCors(app, config.server);
- registerHealthRoutes(app);
+ registerHealthRoutes(app, config.auth);
  app.register(async (instance) =>
    registerAuthRoutes(instance, authService, googleOAuth, config.auth),
  );
